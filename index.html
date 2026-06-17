@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChronoFlow - Premium Time Tracker & Analytics</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="dark-theme">
+    <div class="app-container">
+        <!-- Sidebar / Brand & Config -->
+        <header class="app-header">
+            <div class="brand-section">
+                <div class="logo-icon">
+                    <i data-lucide="clock" class="icon-pulse"></i>
+                </div>
+                <div class="brand-details">
+                    <h1>ChronoFlow</h1>
+                    <p class="subtitle">Time Tracking & Analytics</p>
+                </div>
+            </div>
+            
+            <div class="header-actions">
+                <button id="themeToggle" class="btn-icon" title="Toggle Theme">
+                    <i data-lucide="sun"></i>
+                </button>
+                <div class="data-actions">
+                    <button id="btnExport" class="btn btn-secondary btn-sm" title="Export logs to CSV">
+                        <i data-lucide="download"></i>
+                        <span>Export CSV</span>
+                    </button>
+                    <button id="btnSave" class="btn btn-secondary btn-sm" title="Save a full JSON backup of your activities and logs">
+                        <i data-lucide="save"></i>
+                        <span>Save JSON</span>
+                    </button>
+                    <button id="btnImport" class="btn btn-secondary btn-sm" title="Upload a JSON backup to restore your data">
+                        <i data-lucide="upload"></i>
+                        <span>Upload JSON</span>
+                    </button>
+                    <input type="file" id="importFile" accept=".json" style="display: none;">
+                    <button id="btnClear" class="btn btn-danger btn-sm" title="Clear all data">
+                        <i data-lucide="trash-2"></i>
+                        <span>Clear All</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="dashboard-grid">
+            <!-- Left Pane: Creator and Statistics -->
+            <section class="left-pane">
+                <!-- Add Activity Panel -->
+                <div class="dashboard-card glass-panel" id="addActivityCard">
+                    <h2 class="card-title">
+                        <i data-lucide="plus-circle" class="title-icon text-accent"></i>
+                        Create New Activity
+                    </h2>
+                    <form id="addActivityForm" class="activity-form">
+                        <div class="form-group">
+                            <label for="activityName">Activity Name</label>
+                            <input type="text" id="activityName" placeholder="e.g., UI Redesign, Exercise, Writing..." required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="activityCategory">Category</label>
+                            <div class="custom-select-wrapper">
+                                <select id="activityCategory" required>
+                                    <option value="" disabled selected>Select activity type...</option>
+                                    <option value="Work">💼 Work / Projects</option>
+                                    <option value="Learning">📚 Learning / Study</option>
+                                    <option value="Health & Fitness">🏃 Health & Fitness</option>
+                                    <option value="Design">🎨 Creative & Design</option>
+                                    <option value="Chores">🧹 Chores & Tasks</option>
+                                    <option value="Leisure">🎮 Leisure & Social</option>
+                                    <option value="Other">✨ Other</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary btn-block">
+                            <i data-lucide="plus"></i>
+                            <span>Add Activity</span>
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Stats Dashboard Panel -->
+                <div class="dashboard-card glass-panel" id="statsCard">
+                    <h2 class="card-title">
+                        <i data-lucide="bar-chart-3" class="title-icon text-primary"></i>
+                        Analytics Dashboard
+                    </h2>
+                    
+                    <div class="stats-overview">
+                        <div class="stat-box">
+                            <span class="stat-label">Total Tracked Today</span>
+                            <span class="stat-value" id="totalTimeTracked">00:00:00</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Activities Running</span>
+                            <span class="stat-value" id="runningCount">0</span>
+                        </div>
+                    </div>
+
+                    <!-- Beautiful SVG Donut Chart for Distribution -->
+                    <div class="chart-container">
+                        <h3 class="chart-title">Time by Category</h3>
+                        <div class="chart-wrapper">
+                            <svg id="categoryChart" viewBox="0 0 200 200" class="donut-chart">
+                                <circle class="chart-bg" cx="100" cy="100" r="70"></circle>
+                                <g id="chartSegments"></g>
+                                <circle class="chart-hole" cx="100" cy="100" r="55"></circle>
+                                <text x="100" y="95" class="chart-text-num" id="chartTotalHours">0.0h</text>
+                                <text x="100" y="115" class="chart-text-lbl">Tracked</text>
+                            </svg>
+                            <div id="chartLegend" class="chart-legend">
+                                <!-- Generated Dynamically -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Pane: Active Trackers and Logs -->
+            <section class="right-pane">
+                <!-- Running Trackers Section -->
+                <div class="tracker-section">
+                    <div class="section-header">
+                        <h2>Active Trackers</h2>
+                        <span class="badge" id="trackerCountBadge">0 Activities</span>
+                    </div>
+                    
+                    <div id="activitiesGrid" class="activities-grid">
+                        <!-- Dynamic Activity Cards Loaded Here -->
+                        <div class="empty-state" id="emptyState">
+                            <div class="empty-icon-wrapper">
+                                <i data-lucide="timer" class="empty-icon"></i>
+                            </div>
+                            <h3>No trackers created yet</h3>
+                            <p>Enter an activity name and choose a category on the left to start tracking your flow.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Session Logs Section -->
+                <div class="dashboard-card glass-panel log-section">
+                    <div class="section-header">
+                        <h2 class="card-title">
+                            <i data-lucide="history" class="title-icon text-secondary"></i>
+                            Session Log History
+                        </h2>
+                        <button id="btnClearLogs" class="btn btn-secondary btn-xs">
+                            <i data-lucide="rotate-ccw"></i>
+                            <span>Reset Logs</span>
+                        </button>
+                    </div>
+
+                    <div class="log-table-container">
+                        <table class="log-table">
+                            <thead>
+                                <tr>
+                                    <th>Activity</th>
+                                    <th>Category</th>
+                                    <th>Duration</th>
+                                    <th>Date Completed</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logTableBody">
+                                <!-- Dynamic Logs Loaded Here -->
+                                <tr id="noLogsRow">
+                                    <td colspan="5" class="no-logs">No logged sessions yet. Keep trackers running and log your durations!</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Notification Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
