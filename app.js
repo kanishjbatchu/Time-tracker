@@ -50,10 +50,6 @@ function setupEventListeners() {
     const themeBtn = document.getElementById('themeToggle');
     themeBtn.addEventListener('click', toggleTheme);
 
-    // CSV Export (logs only, spreadsheet-friendly)
-    const btnExport = document.getElementById('btnExport');
-    btnExport.addEventListener('click', exportCSV);
-
     // JSON Save (full backup) + Upload (restore)
     const btnSave = document.getElementById('btnSave');
     btnSave.addEventListener('click', exportJSON);
@@ -523,27 +519,6 @@ function renderCharts() {
 }
 
 // Data Actions utilities
-function exportCSV() {
-    if (state.logs.length === 0) {
-        showToast('No logs available to export.', 'warning');
-        return;
-    }
-
-    const headers = ['Activity Name', 'Category', 'Duration (Seconds)', 'Duration (Formatted)', 'Date Completed'];
-    const rows = state.logs.map(log => [
-        `"${log.activityName.replace(/"/g, '""')}"`,
-        log.category,
-        log.duration,
-        formatDuration(log.duration),
-        new Date(log.timestamp).toLocaleString()
-    ]);
-
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    triggerDownload(csvContent, 'text/csv;charset=utf-8;', `chronoflow_logs_${dateStamp()}.csv`);
-
-    showToast('CSV exported successfully!', 'success');
-}
-
 // Save a full JSON backup of activities, logs and theme — re-importable via "Upload JSON".
 function exportJSON() {
     if (state.activities.length === 0 && state.logs.length === 0) {
@@ -560,36 +535,18 @@ function exportJSON() {
     };
 
     const json = JSON.stringify(backup, null, 2);
-    triggerDownload(json, 'application/json;charset=utf-8;', buildBackupFilename());
+    triggerDownload(json, 'application/json;charset=utf-8;', `chronoflow_backup_${fileTimestamp()}.json`);
 
     showToast('Backup saved successfully!', 'success');
 }
 
-// Build a backup filename from the activity names, e.g. "ui-redesign_exercise_2026-06-16.json".
-function buildBackupFilename() {
-    const slugs = state.activities
-        .map(act => slugify(act.name))
-        .filter(Boolean);
-
-    let namePart;
-    if (slugs.length === 0) {
-        namePart = 'chronoflow-backup';
-    } else if (slugs.length <= 3) {
-        namePart = slugs.join('_');
-    } else {
-        namePart = `${slugs.slice(0, 3).join('_')}_and-${slugs.length - 3}-more`;
-    }
-
-    return `${namePart}_${dateStamp()}.json`;
-}
-
-// Convert an activity name into a safe, lowercase filename fragment.
-function slugify(str) {
-    return str
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-') // non-alphanumerics become hyphens
-        .replace(/^-+|-+$/g, '')     // trim leading/trailing hyphens
-        .slice(0, 40);               // keep each fragment reasonably short
+// Local date-time stamp for filenames, e.g. "2026-06-17_14-30-05".
+function fileTimestamp() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const time = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+    return `${date}_${time}`;
 }
 
 // Shared file-download helper
@@ -604,11 +561,6 @@ function triggerDownload(content, mimeType, filename) {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-}
-
-// YYYY-MM-DD stamp for filenames
-function dateStamp() {
-    return new Date().toISOString().split('T')[0];
 }
 
 function handleJSONImport(event) {
