@@ -4,6 +4,7 @@
 let state = {
     activities: [],
     logs: [],
+    alarms: [],
     theme: 'dark'
 };
 
@@ -26,6 +27,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loadState();
     setupEventListeners();
     initTheme();
+    populateRingtoneOptions();
+    setDefaultAlarmDateTime();
     startTicker();
     renderAll();
     showToast('Welcome to ChronoFlow!', 'info');
@@ -66,11 +69,48 @@ function setupEventListeners() {
     // Reset Logs Only
     const btnClearLogs = document.getElementById('btnClearLogs');
     btnClearLogs.addEventListener('click', resetLogsOnly);
+
+    // Alarm: header button toggles the alarm customization panel
+    const btnToggleAlarm = document.getElementById('btnToggleAlarm');
+    if (btnToggleAlarm) btnToggleAlarm.addEventListener('click', toggleAlarmPanel);
+
+    // Alarm: set new alarm
+    const alarmForm = document.getElementById('addAlarmForm');
+    alarmForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const label = document.getElementById('alarmLabel').value.trim();
+        const dateVal = document.getElementById('alarmDate').value;
+        const timeVal = document.getElementById('alarmTime').value;
+        const ringtone = document.getElementById('alarmRingtone').value;
+
+        if (addAlarm(label, dateVal, timeVal, ringtone)) {
+            document.getElementById('alarmLabel').value = '';
+            setDefaultAlarmDateTime();
+        }
+    });
+
+    // Alarm: preview the selected ringtone
+    document.getElementById('btnPreviewRingtone').addEventListener('click', previewRingtone);
+
+    // Alarm: ringing overlay controls
+    document.getElementById('btnStopAlarm').addEventListener('click', dismissCurrentAlarm);
+    document.getElementById('btnSnooze').addEventListener('click', snoozeCurrentAlarm);
+
+    // Unlock the Web Audio context on the first user gesture so alarms can play later
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
 }
 
 // Load / Save State functions
 function loadState() {
-    const savedState = localStorage.getItem('chronoflow_state');
+    let savedState = null;
+    try {
+        savedState = localStorage.getItem('chronoflow_state');
+    } catch (e) {
+        // localStorage can be blocked (e.g. an inline/opaque-origin preview or
+        // private mode). Run without persistence rather than crashing.
+        console.warn('localStorage unavailable — running without saved data.', e);
+    }
     if (savedState) {
         try {
             state = JSON.parse(savedState);
@@ -78,6 +118,9 @@ function loadState() {
             if (!state.activities) state.activities = [];
             if (!state.logs) state.logs = [];
             if (!state.theme) state.theme = 'dark';
+            // Alarms are session-only: they are created via the "Set Alarm" button
+            // and never restored from storage, so none "load" on page load.
+            state.alarms = [];
             
             // Adjust activities loading: if they were running when saved, convert relative running time
             state.activities.forEach(act => {
@@ -95,7 +138,14 @@ function loadState() {
 }
 
 function saveState() {
-    localStorage.setItem('chronoflow_state', JSON.stringify(state));
+    try {
+        // Persist everything EXCEPT alarms — alarms are session-only and must not
+        // be reloaded when the website loads.
+        const { alarms, ...persist } = state;
+        localStorage.setItem('chronoflow_state', JSON.stringify(persist));
+    } catch (e) {
+        // Storage unavailable/full — keep working in-memory for this session.
+    }
 }
 
 // Theme handling
@@ -277,6 +327,10 @@ function formatDate(isoString) {
 function startTicker() {
     if (tickInterval) clearInterval(tickInterval);
     tickInterval = setInterval(() => {
+        // Fire any alarms whose time has arrived, then refresh their countdowns
+        checkAlarms();
+        updateAlarmCountdowns();
+
         let activeCounts = 0;
         let totalLiveTodaySec = 0;
 
@@ -321,6 +375,7 @@ function renderAll() {
     renderActivities();
     renderLogs();
     renderCharts();
+    renderAlarms();
 }
 
 function renderActivities() {
@@ -526,6 +581,7 @@ function exportJSON() {
         return;
     }
 
+    // Alarms are session-only and intentionally not included in backups.
     const backup = {
         version: 1,
         exportedAt: new Date().toISOString(),
@@ -606,9 +662,13 @@ function handleJSONImport(event) {
 }
 
 function clearAllData() {
-    if (confirm('Are you absolutely sure you want to clear ALL activities, stopwatches, and historical logged data? This action is irreversible.')) {
+    if (confirm('Are you absolutely sure you want to clear ALL activities, stopwatches, alarms, and historical logged data? This action is irreversible.')) {
         state.activities = [];
         state.logs = [];
+        state.alarms = [];
+        ringingQueue = [];
+        stopRingtone();
+        hideRingingOverlay();
         saveState();
         renderAll();
         showToast('All app data has been reset.', 'warning');
@@ -662,7 +722,7 @@ function showToast(message, type = 'info') {
 
 // Helper to escape HTML tags for safety
 function escapeHTML(str) {
-    return str.replace(/[&<>'"]/g, 
+    return str.replace(/[&<>'"]/g,
         tag => ({
             '&': '&amp;',
             '<': '&lt;',
@@ -671,4 +731,570 @@ function escapeHTML(str) {
             '"': '&quot;'
         }[tag] || tag)
     );
+}
+
+/* =======================================================================
+   ALARM FEATURE
+   - Set an alarm with a ringtone, time and date.
+   - When it fires: mute other sounds, pause running stopwatches, ring.
+   - Ringtones are synthesized with the Web Audio API so the app needs no
+     audio files and works fully offline.
+   ======================================================================= */
+
+// --- Ringtone definitions (synthesized) ---
+// Each ringtone is a looping sequence of notes. f = frequency in Hz (0 = rest),
+// d = duration in seconds. `type` is the oscillator waveform.
+const RINGTONES = {
+    classic: {
+        name: 'Classic Beep',
+        type: 'square',
+        notes: [ {f: 880, d: 0.15}, {f: 0, d: 0.1}, {f: 880, d: 0.15}, {f: 0, d: 0.55} ]
+    },
+    chime: {
+        name: 'Gentle Chime',
+        type: 'sine',
+        notes: [ {f: 523.25, d: 0.22}, {f: 659.25, d: 0.22}, {f: 783.99, d: 0.35}, {f: 0, d: 0.7} ]
+    },
+    digital: {
+        name: 'Digital Alarm',
+        type: 'square',
+        notes: [ {f: 1046.5, d: 0.08}, {f: 0, d: 0.06}, {f: 1046.5, d: 0.08}, {f: 0, d: 0.06}, {f: 1046.5, d: 0.08}, {f: 0, d: 0.45} ]
+    },
+    pulse: {
+        name: 'Deep Pulse',
+        type: 'sawtooth',
+        notes: [ {f: 196, d: 0.4}, {f: 0, d: 0.22} ]
+    },
+    arcade: {
+        name: 'Arcade Tune',
+        type: 'triangle',
+        notes: [ {f: 659.25, d: 0.12}, {f: 783.99, d: 0.12}, {f: 1046.5, d: 0.18}, {f: 783.99, d: 0.12}, {f: 1046.5, d: 0.28}, {f: 0, d: 0.45} ]
+    }
+};
+
+// --- Web Audio engine ---
+let audioCtx = null;
+let ringtonePlayer = null;   // { stop() } for whatever is currently sounding
+let previewTimeout = null;   // auto-stop timer for ringtone previews
+
+function getAudioContext() {
+    if (!audioCtx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        audioCtx = new AC();
+    }
+    return audioCtx;
+}
+
+// Resume the audio context from a user gesture (browsers block audio otherwise).
+function unlockAudio() {
+    const ctx = getAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+    }
+}
+
+// Start looping a ringtone. Any sound already playing is stopped first.
+function playRingtone(key) {
+    if (previewTimeout) { clearTimeout(previewTimeout); previewTimeout = null; }
+    stopRingtone();
+
+    const def = RINGTONES[key] || RINGTONES.classic;
+    const ctx = getAudioContext();
+    if (!ctx) return; // Web Audio unavailable — alarm still pops the overlay
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+
+    const master = ctx.createGain();
+    master.gain.value = 0.0001;
+    master.connect(ctx.destination);
+    // Gentle fade-in so it doesn't pop
+    master.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 0.06);
+
+    let stopped = false;
+    let loopTimer = null;
+
+    function scheduleCycle() {
+        if (stopped) return;
+        let t = ctx.currentTime;
+        let cycleLength = 0;
+
+        def.notes.forEach(note => {
+            if (note.f > 0) {
+                const osc = ctx.createOscillator();
+                const g = ctx.createGain();
+                osc.type = def.type;
+                osc.frequency.value = note.f;
+                // Per-note envelope (quick attack, decay to silence)
+                g.gain.setValueAtTime(0.0001, t);
+                g.gain.exponentialRampToValueAtTime(1, t + 0.012);
+                g.gain.exponentialRampToValueAtTime(0.0001, t + note.d);
+                osc.connect(g);
+                g.connect(master);
+                osc.start(t);
+                osc.stop(t + note.d + 0.03);
+            }
+            t += note.d;
+            cycleLength += note.d;
+        });
+
+        loopTimer = setTimeout(scheduleCycle, Math.max(50, cycleLength * 1000));
+    }
+
+    scheduleCycle();
+
+    ringtonePlayer = {
+        stop() {
+            stopped = true;
+            if (loopTimer) clearTimeout(loopTimer);
+            try {
+                master.gain.cancelScheduledValues(ctx.currentTime);
+                master.gain.setValueAtTime(Math.max(master.gain.value, 0.0001), ctx.currentTime);
+                master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.1);
+            } catch (e) { /* ignore */ }
+            setTimeout(() => { try { master.disconnect(); } catch (e) {} }, 200);
+        }
+    };
+}
+
+function stopRingtone() {
+    if (ringtonePlayer) {
+        ringtonePlayer.stop();
+        ringtonePlayer = null;
+    }
+}
+
+// When the alarm fires, stop ChronoFlow's OWN sounds so the chosen ringtone plays
+// cleanly: pause any media element on this page and (when no alarm is already
+// sounding) stop a ringtone preview. The ringtone is started afterwards by
+// startRinging()/playRingtone(). When an alarm is ALREADY ringing we must not stop
+// it, so the caller passes stopPreview = false.
+//
+// Note: this only affects ChronoFlow's own audio — a web page cannot mute other
+// apps or browser tabs.
+function muteOtherSounds(stopPreview) {
+    document.querySelectorAll('audio, video').forEach(el => {
+        if (!el.paused) {
+            try { el.pause(); } catch (e) {}
+        }
+    });
+    if (stopPreview) {
+        if (previewTimeout) { clearTimeout(previewTimeout); previewTimeout = null; }
+        stopRingtone();
+        setPreviewIcon(false);
+    }
+}
+
+// --- Make the ringing noticeable ---
+// A web page cannot mute other apps or other browser tabs (browser security), so
+// we don't try — we just grab attention: flash the browser-tab title and buzz the
+// device on mobile. Idempotent — safe to call for each alarm.
+let alarmTitleTimer = null;
+let savedDocTitle = null;
+
+function startAlarmAttention() {
+    if (alarmTitleTimer) return;
+    if (savedDocTitle === null) savedDocTitle = document.title;
+    let on = true;
+    document.title = '⏰ Alarm!'; // change immediately, then flash
+    alarmTitleTimer = setInterval(() => {
+        on = !on;
+        document.title = on ? '⏰ Alarm!' : (savedDocTitle || 'ChronoFlow');
+    }, 800);
+    if (navigator.vibrate) {
+        try { navigator.vibrate([400, 200, 400, 200, 400]); } catch (e) {}
+    }
+}
+
+function stopAlarmAttention() {
+    if (alarmTitleTimer) {
+        clearInterval(alarmTitleTimer);
+        alarmTitleTimer = null;
+    }
+    if (savedDocTitle !== null) {
+        document.title = savedDocTitle;
+        savedDocTitle = null;
+    }
+    if (navigator.vibrate) {
+        try { navigator.vibrate(0); } catch (e) {}
+    }
+}
+
+// --- Ringtone preview ---
+function previewRingtone() {
+    // If a preview is already playing, treat the click as "stop".
+    if (previewTimeout) {
+        clearTimeout(previewTimeout);
+        previewTimeout = null;
+        stopRingtone();
+        setPreviewIcon(false);
+        return;
+    }
+    if (ringingQueue.length > 0) return; // don't fight a live alarm
+
+    const key = document.getElementById('alarmRingtone').value;
+    unlockAudio();
+    playRingtone(key);
+    setPreviewIcon(true);
+    previewTimeout = setTimeout(() => {
+        stopRingtone();
+        previewTimeout = null;
+        setPreviewIcon(false);
+    }, 3500);
+}
+
+function setPreviewIcon(playing) {
+    const btn = document.getElementById('btnPreviewRingtone');
+    if (!btn) return;
+    btn.innerHTML = `<i data-lucide="${playing ? 'square' : 'play'}"></i>`;
+    btn.title = playing ? 'Stop preview' : 'Preview ringtone';
+    lucide.createIcons();
+}
+
+function populateRingtoneOptions() {
+    const sel = document.getElementById('alarmRingtone');
+    if (!sel) return;
+    sel.innerHTML = '';
+    Object.keys(RINGTONES).forEach((key, i) => {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = RINGTONES[key].name;
+        if (i === 0) opt.selected = true;
+        sel.appendChild(opt);
+    });
+}
+
+// --- Alarm panel toggle ---
+// The customization UI is hidden on load; the header "Alarm" button reveals it
+// next to "Create New Activity". No alarms are shown until the user opens it.
+function toggleAlarmPanel() {
+    const card = document.getElementById('alarmCard');
+    const btn = document.getElementById('btnToggleAlarm');
+    if (!card) return;
+
+    const willShow = card.classList.contains('alarm-hidden');
+    card.classList.toggle('alarm-hidden', !willShow);
+    if (btn) btn.classList.toggle('active', willShow);
+
+    if (willShow) {
+        setDefaultAlarmDateTime();   // refresh the default date/time on open
+        unlockAudio();               // this click is a user gesture — prime audio
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const label = document.getElementById('alarmLabel');
+        if (label) setTimeout(() => { try { label.focus(); } catch (e) {} }, 250);
+    }
+}
+
+// --- Alarm CRUD ---
+function setDefaultAlarmDateTime() {
+    const dateEl = document.getElementById('alarmDate');
+    const timeEl = document.getElementById('alarmTime');
+    if (!dateEl || !timeEl) return;
+
+    const pad = (n) => String(n).padStart(2, '0');
+    const next = new Date(Date.now() + 5 * 60 * 1000); // default 5 minutes from now
+    dateEl.value = `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}`;
+    timeEl.value = `${pad(next.getHours())}:${pad(next.getMinutes())}`;
+}
+
+function addAlarm(label, dateVal, timeVal, ringtone) {
+    if (!dateVal || !timeVal) {
+        showToast('Please choose both a date and a time for the alarm.', 'warning');
+        return false;
+    }
+
+    const time = new Date(`${dateVal}T${timeVal}`).getTime();
+    if (isNaN(time)) {
+        showToast('That date and time are not valid.', 'error');
+        return false;
+    }
+    if (time <= Date.now()) {
+        showToast('Please pick a time in the future.', 'warning');
+        return false;
+    }
+
+    const alarm = {
+        id: 'alarm_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+        label: label || '',
+        ringtone: RINGTONES[ringtone] ? ringtone : 'classic',
+        time: time,
+        enabled: true,
+        triggered: false,
+        missed: false
+    };
+
+    state.alarms.push(alarm);
+    state.alarms.sort((a, b) => a.time - b.time);
+    saveState();
+    renderAlarms();
+    unlockAudio(); // this submit is a user gesture — prime audio for when it fires
+
+    const when = `${formatClockTime(time)} · ${formatAlarmDate(time)}`;
+    showToast(`Alarm set for ${when}`, 'success');
+    return true;
+}
+
+function deleteAlarm(id) {
+    const idx = state.alarms.findIndex(a => a.id === id);
+    if (idx === -1) return;
+
+    state.alarms.splice(idx, 1);
+
+    // If this alarm is currently ringing or queued, remove it from the queue too.
+    const qIdx = ringingQueue.findIndex(e => e.id === id);
+    if (qIdx === 0) {
+        dismissCurrentAlarm();
+    } else if (qIdx > 0) {
+        ringingQueue.splice(qIdx, 1);
+        renderRingingOverlay();
+    }
+
+    saveState();
+    renderAlarms();
+    showToast('Alarm removed', 'warning');
+}
+
+function toggleAlarmEnabled(id) {
+    const al = state.alarms.find(a => a.id === id);
+    if (!al) return;
+
+    if (!al.enabled) {
+        // Re-enabling: only valid if the alarm time is still in the future,
+        // otherwise it would fire instantly.
+        if (al.time <= Date.now()) {
+            showToast('That alarm time has already passed — set a new alarm instead.', 'warning');
+            return;
+        }
+        al.enabled = true;
+        al.triggered = false;
+        al.missed = false;
+    } else {
+        al.enabled = false;
+    }
+
+    saveState();
+    renderAlarms();
+}
+
+// --- Alarm firing ---
+function checkAlarms() {
+    const now = Date.now();
+    state.alarms.forEach(al => {
+        if (al.enabled && !al.triggered && al.time <= now) {
+            triggerAlarm(al);
+        }
+    });
+}
+
+function triggerAlarm(al) {
+    al.triggered = true;
+    al.enabled = false;
+
+    // Requirement: pause running stopwatches, mute other sounds, then ring.
+    const pausedCount = pauseAllRunningStopwatches();
+    // If another alarm is already sounding, leave it playing and just queue this
+    // one — its ringtone plays once the current alarm is dismissed or snoozed.
+    const alreadyRinging = ringingQueue.length > 0;
+    muteOtherSounds(!alreadyRinging);
+
+    saveState();
+    renderActivities();
+    renderAlarms();
+
+    enqueueRinging(al.id, pausedCount);
+}
+
+// Pause every running stopwatch (mirrors the pause branch of toggleStopwatch).
+// Returns how many were actually paused.
+function pauseAllRunningStopwatches() {
+    let paused = 0;
+    state.activities.forEach(act => {
+        if (act.isRunning && act.startTime) {
+            act.isRunning = false;
+            act.timeElapsed = act.accumulatedBeforeRun + Math.floor((Date.now() - act.startTime) / 1000);
+            act.accumulatedBeforeRun = act.timeElapsed;
+            act.startTime = null;
+            paused++;
+        }
+    });
+    return paused;
+}
+
+// --- Ringing overlay (supports a queue if several fire at once) ---
+let ringingQueue = []; // array of { id, pausedCount }
+
+function enqueueRinging(id, pausedCount) {
+    ringingQueue.push({ id: id, pausedCount: pausedCount || 0 });
+    if (ringingQueue.length === 1) {
+        startRinging();
+    } else {
+        renderRingingOverlay(); // update the "N more waiting" line
+    }
+}
+
+function startRinging() {
+    if (ringingQueue.length === 0) {
+        hideRingingOverlay();
+        return;
+    }
+    const entry = ringingQueue[0];
+    const al = state.alarms.find(a => a.id === entry.id);
+    if (!al) {
+        ringingQueue.shift();
+        startRinging();
+        return;
+    }
+    playRingtone(al.ringtone);
+    showRingingOverlay();
+    startAlarmAttention();
+}
+
+function showRingingOverlay() {
+    const overlay = document.getElementById('alarmRingOverlay');
+    if (!overlay) return;
+    overlay.classList.add('active');
+    overlay.setAttribute('aria-hidden', 'false');
+    renderRingingOverlay();
+}
+
+function renderRingingOverlay() {
+    if (ringingQueue.length === 0) return;
+    const entry = ringingQueue[0];
+    const al = state.alarms.find(a => a.id === entry.id);
+    if (!al) return;
+
+    const labelText = (al.label && al.label.trim()) ? al.label : 'Alarm';
+    document.getElementById('ringLabel').textContent = labelText;
+    document.getElementById('ringTime').textContent = `${formatClockTime(al.time)} · ${formatAlarmDate(al.time)}`;
+
+    const extras = [];
+    if (entry.pausedCount > 0) {
+        extras.push(`Paused ${entry.pausedCount} running stopwatch${entry.pausedCount > 1 ? 'es' : ''}`);
+    }
+    const waiting = ringingQueue.length - 1;
+    if (waiting > 0) {
+        extras.push(`${waiting} more alarm${waiting > 1 ? 's' : ''} waiting`);
+    }
+    document.getElementById('ringExtra').textContent = extras.join(' · ');
+
+    lucide.createIcons();
+}
+
+function hideRingingOverlay() {
+    const overlay = document.getElementById('alarmRingOverlay');
+    if (!overlay) return;
+    overlay.classList.remove('active');
+    overlay.setAttribute('aria-hidden', 'true');
+    stopAlarmAttention();
+}
+
+function dismissCurrentAlarm() {
+    stopRingtone();
+    ringingQueue.shift();
+    if (ringingQueue.length > 0) {
+        startRinging();
+    } else {
+        hideRingingOverlay();
+    }
+}
+
+function snoozeCurrentAlarm() {
+    if (ringingQueue.length === 0) return;
+    const entry = ringingQueue[0];
+    const al = state.alarms.find(a => a.id === entry.id);
+    if (al) {
+        al.time = Date.now() + 5 * 60 * 1000;
+        al.triggered = false;
+        al.enabled = true;
+        al.missed = false;
+        saveState();
+        renderAlarms();
+        const labelText = (al.label && al.label.trim()) ? al.label : 'Alarm';
+        showToast(`Snoozed "${labelText}" for 5 minutes`, 'info');
+    }
+    dismissCurrentAlarm();
+}
+
+// --- Alarm rendering ---
+function renderAlarms() {
+    const list = document.getElementById('alarmList');
+    if (!list) return;
+    list.innerHTML = '';
+
+    if (state.alarms.length === 0) {
+        list.innerHTML = `<div class="alarm-empty">No alarms set. Pick a time, date, and ringtone above.</div>`;
+        return;
+    }
+
+    const sorted = [...state.alarms].sort((a, b) => a.time - b.time);
+    sorted.forEach(al => {
+        const rt = RINGTONES[al.ringtone] || RINGTONES.classic;
+        const labelText = (al.label && al.label.trim()) ? al.label : 'Alarm';
+
+        const item = document.createElement('div');
+        item.className = `alarm-item ${al.enabled ? '' : 'disabled'}`;
+        item.innerHTML = `
+            <div class="alarm-item-time-block">
+                <span class="alarm-item-time">${formatClockTime(al.time)}</span>
+                <span class="alarm-item-date">${formatAlarmDate(al.time)}</span>
+            </div>
+            <div class="alarm-item-main">
+                <span class="alarm-item-label" title="${escapeHTML(labelText)}">${escapeHTML(labelText)}</span>
+                <span class="alarm-item-ringtone">
+                    <i data-lucide="music-2" style="width: 12px; height: 12px;"></i>
+                    ${rt.name}
+                </span>
+            </div>
+            <div class="alarm-item-right">
+                <span class="alarm-countdown" id="alarm-countdown-${al.id}">${alarmStatusText(al)}</span>
+                <div class="alarm-item-actions">
+                    <button class="alarm-toggle-btn" onclick="toggleAlarmEnabled('${al.id}')" title="${al.enabled ? 'Disable alarm' : 'Enable alarm'}">
+                        <i data-lucide="${al.enabled ? 'bell' : 'bell-off'}" style="width: 16px; height: 16px;"></i>
+                    </button>
+                    <button class="alarm-delete-btn" onclick="deleteAlarm('${al.id}')" title="Delete alarm">
+                        <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        list.appendChild(item);
+    });
+
+    lucide.createIcons();
+}
+
+// Lightweight per-second update of just the countdown text (no DOM rebuild).
+function updateAlarmCountdowns() {
+    state.alarms.forEach(al => {
+        const el = document.getElementById(`alarm-countdown-${al.id}`);
+        if (el) el.textContent = alarmStatusText(al);
+    });
+}
+
+function alarmStatusText(al) {
+    if (al.missed) return 'Missed';
+    if (al.triggered) return 'Done';
+    if (!al.enabled) return 'Off';
+    const diff = al.time - Date.now();
+    if (diff <= 0) return 'Ringing…';
+    return 'in ' + formatCountdown(diff);
+}
+
+// --- Alarm formatting helpers ---
+function formatClockTime(ts) {
+    return new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatAlarmDate(ts) {
+    return new Date(ts).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function formatCountdown(ms) {
+    let s = Math.floor(ms / 1000);
+    const d = Math.floor(s / 86400); s -= d * 86400;
+    const h = Math.floor(s / 3600); s -= h * 3600;
+    const m = Math.floor(s / 60); s -= m * 60;
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
 }
