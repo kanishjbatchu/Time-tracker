@@ -96,6 +96,17 @@ function setupEventListeners() {
     document.getElementById('btnStopAlarm').addEventListener('click', dismissCurrentAlarm);
     document.getElementById('btnSnooze').addEventListener('click', snoozeCurrentAlarm);
 
+    // Edit modal (customize stopwatch / edit session)
+    document.getElementById('editSave').addEventListener('click', saveEdit);
+    document.getElementById('editCancel').addEventListener('click', closeEditModal);
+    document.getElementById('editModal').addEventListener('click', (e) => {
+        if (e.target.id === 'editModal') closeEditModal(); // click backdrop to close
+    });
+    document.addEventListener('keydown', (e) => {
+        const modal = document.getElementById('editModal');
+        if (e.key === 'Escape' && modal.classList.contains('active')) closeEditModal();
+    });
+
     // Unlock the Web Audio context on the first user gesture so alarms can play later
     window.addEventListener('pointerdown', unlockAudio, { once: true });
     window.addEventListener('keydown', unlockAudio, { once: true });
@@ -303,6 +314,140 @@ function deleteLog(logId) {
     }
 }
 
+// =======================================================================
+// CUSTOMIZE / EDIT TIME
+// - Adjust a live stopwatch's elapsed time (e.g. you forgot to start it).
+// - Fix a logged session recorded with the wrong duration or on the wrong
+//   DAY by editing its time and its completion date.
+// =======================================================================
+
+// What's currently being edited: { type: 'stopwatch' | 'log', id }
+let editTarget = null;
+
+// Set a stopwatch's elapsed time directly. Keeps it running from the new value
+// if it was running when edited.
+function setStopwatchTime(id, totalSeconds) {
+    const act = state.activities.find(a => a.id === id);
+    if (!act) return;
+    totalSeconds = Math.max(0, Math.floor(totalSeconds));
+    act.timeElapsed = totalSeconds;
+    act.accumulatedBeforeRun = totalSeconds;
+    act.startTime = act.isRunning ? Date.now() : null;
+    saveState();
+    renderActivities();
+}
+
+// Update a logged session's duration and/or completion date. Adjusts the owning
+// activity's running total so the analytics stay correct.
+function editLog(logId, newDurationSec, newTimestampISO) {
+    const log = state.logs.find(l => l.id === logId);
+    if (!log) return;
+    const oldDuration = log.duration;
+    log.duration = Math.max(1, Math.floor(newDurationSec));
+    log.timestamp = newTimestampISO;
+
+    const act = state.activities.find(a => a.id === log.activityId);
+    if (act) {
+        act.totalAccumulated = Math.max(0, act.totalAccumulated - oldDuration + log.duration);
+    }
+
+    // Keep the log newest-first after a date change
+    state.logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    saveState();
+    renderAll();
+}
+
+// --- Edit modal control ---
+function openEditStopwatch(id) {
+    const act = state.activities.find(a => a.id === id);
+    if (!act) return;
+
+    let currentSec = act.timeElapsed;
+    if (act.isRunning && act.startTime) {
+        currentSec = act.accumulatedBeforeRun + Math.floor((Date.now() - act.startTime) / 1000);
+    }
+
+    editTarget = { type: 'stopwatch', id: id };
+    document.getElementById('editModalTitle').textContent = 'Customize Stopwatch';
+    document.getElementById('editModalSubtitle').textContent = act.name;
+    fillEditTimeInputs(currentSec);
+    document.getElementById('editDateGroup').style.display = 'none';
+    showEditModal();
+}
+
+function openEditLog(logId) {
+    const log = state.logs.find(l => l.id === logId);
+    if (!log) return;
+
+    editTarget = { type: 'log', id: logId };
+    document.getElementById('editModalTitle').textContent = 'Edit Session';
+    document.getElementById('editModalSubtitle').textContent = `${log.activityName} · ${log.category}`;
+    fillEditTimeInputs(log.duration);
+    document.getElementById('editDate').value = toDatetimeLocalValue(new Date(log.timestamp));
+    document.getElementById('editDateGroup').style.display = 'flex';
+    showEditModal();
+}
+
+function fillEditTimeInputs(totalSeconds) {
+    totalSeconds = Math.max(0, Math.floor(totalSeconds));
+    document.getElementById('editHours').value = Math.floor(totalSeconds / 3600);
+    document.getElementById('editMinutes').value = Math.floor((totalSeconds % 3600) / 60);
+    document.getElementById('editSeconds').value = totalSeconds % 60;
+}
+
+function readEditTimeInputs() {
+    const h = Math.max(0, parseInt(document.getElementById('editHours').value, 10) || 0);
+    const m = Math.max(0, parseInt(document.getElementById('editMinutes').value, 10) || 0);
+    const s = Math.max(0, parseInt(document.getElementById('editSeconds').value, 10) || 0);
+    return h * 3600 + m * 60 + s;
+}
+
+function saveEdit() {
+    if (!editTarget) return;
+    const totalSeconds = readEditTimeInputs();
+
+    if (editTarget.type === 'stopwatch') {
+        setStopwatchTime(editTarget.id, totalSeconds);
+        showToast('Stopwatch time updated', 'success');
+    } else if (editTarget.type === 'log') {
+        if (totalSeconds <= 0) {
+            showToast('Duration must be greater than zero.', 'warning');
+            return;
+        }
+        const dateVal = document.getElementById('editDate').value;
+        const ts = dateVal ? new Date(dateVal).getTime() : NaN;
+        if (isNaN(ts)) {
+            showToast('Please choose a valid date and time.', 'warning');
+            return;
+        }
+        editLog(editTarget.id, totalSeconds, new Date(ts).toISOString());
+        showToast('Session updated', 'success');
+    }
+
+    closeEditModal();
+}
+
+function showEditModal() {
+    const overlay = document.getElementById('editModal');
+    overlay.classList.add('active');
+    overlay.setAttribute('aria-hidden', 'false');
+    lucide.createIcons();
+}
+
+function closeEditModal() {
+    const overlay = document.getElementById('editModal');
+    overlay.classList.remove('active');
+    overlay.setAttribute('aria-hidden', 'true');
+    editTarget = null;
+}
+
+// Date -> value for <input type="datetime-local"> (local time, minute precision)
+function toDatetimeLocalValue(d) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 // Formatting helpers
 function formatDuration(totalSeconds) {
     const hours = Math.floor(totalSeconds / 3600);
@@ -434,6 +579,9 @@ function renderActivities() {
                     <i data-lucide="${act.isRunning ? 'pause' : 'play'}" style="width: 16px; height: 16px;"></i>
                     <span>${act.isRunning ? 'Pause' : 'Start'}</span>
                 </button>
+                <button class="btn-control btn-edit-timer" onclick="openEditStopwatch('${act.id}')" title="Customize stopwatch time">
+                    <i data-lucide="pencil" style="width: 16px; height: 16px;"></i>
+                </button>
                 <button class="btn-control btn-reset-timer" onclick="resetStopwatch('${act.id}')" title="Reset Timer">
                     <i data-lucide="rotate-ccw" style="width: 16px; height: 16px;"></i>
                 </button>
@@ -475,9 +623,14 @@ function renderLogs() {
             <td style="font-variant-numeric: tabular-nums; font-weight: 500;">${formatDuration(log.duration)}</td>
             <td style="color: var(--text-muted); font-size: 0.85rem;">${formatDate(log.timestamp)}</td>
             <td>
-                <button class="btn-delete-log" onclick="deleteLog('${log.id}')" title="Delete Log">
-                    <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>
-                </button>
+                <div class="log-actions">
+                    <button class="btn-edit-log" onclick="openEditLog('${log.id}')" title="Edit duration & date">
+                        <i data-lucide="pencil" style="width: 16px; height: 16px;"></i>
+                    </button>
+                    <button class="btn-delete-log" onclick="deleteLog('${log.id}')" title="Delete Log">
+                        <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>
+                    </button>
+                </div>
             </td>
         `;
         tbody.appendChild(row);

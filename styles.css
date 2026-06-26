@@ -722,7 +722,7 @@ body.light-theme .chart-hole {
 /* Stopwatch Controls */
 .stopwatch-controls {
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
     gap: 0.5rem;
 }
 
@@ -1316,4 +1316,187 @@ body.light-theme .alarm-item {
     10%, 30%, 50% { transform: rotate(-12deg); }
     20%, 40%, 60% { transform: rotate(12deg); }
     70% { transform: rotate(0); }
+}
+
+/* ============================================================
+   CUSTOMIZE / EDIT TIME
+   ============================================================ */
+
+/* Edit button on activity cards (matches the other stopwatch controls) */
+.btn-edit-timer {
+    background: var(--bg-glass);
+    border: 1px solid var(--border-glass);
+    color: var(--text-muted);
+}
+
+.btn-edit-timer:hover {
+    background: var(--bg-glass-hover);
+    color: var(--secondary);
+    border-color: rgba(6, 182, 212, 0.3);
+}
+
+/* Edit button on log rows */
+.log-actions {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+}
+
+.btn-edit-log {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    transition: color var(--transition-fast);
+}
+
+.btn-edit-log:hover {
+    color: var(--secondary);
+}
+
+/* Edit / customize modal */
+.edit-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1900;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: rgba(7, 6, 20, 0.72);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.edit-modal-overlay.active {
+    display: flex;
+    animation: fadeIn 0.2s ease forwards;
+}
+
+.edit-modal {
+    width: 100%;
+    max-width: 420px;
+    padding: 1.75rem;
+    border: 1px solid var(--border-glass-focused);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+    animation: ringPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.edit-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+.edit-modal-title i,
+.edit-modal-title svg {
+    width: 20px;
+    height: 20px;
+    color: var(--secondary);
+}
+
+.edit-modal-subtitle {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-top: 0.35rem;
+    margin-bottom: 1.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.edit-time-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+}
+
+.edit-time-field {
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 1;
+}
+
+.edit-time-field input {
+    width: 100%;
+    font-family: var(--font-primary);
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    color: var(--text-main);
+    padding: 0.75rem 0.4rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    outline: none;
+    transition: all var(--transition-fast);
+}
+
+body.light-theme .edit-time-field input {
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.edit-time-field input:focus {
+    border-color: var(--secondary);
+    box-shadow: 0 0 0 3px var(--secondary-glow);
+}
+
+.edit-time-field label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.edit-time-colon {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    padding-bottom: 1.7rem;
+}
+
+.edit-date-group {
+    margin-bottom: 1.5rem;
+}
+
+.edit-date-group input[type="datetime-local"] {
+    font-family: var(--font-primary);
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    color: var(--text-main);
+    padding: 0.8rem 1rem;
+    font-size: 0.95rem;
+    outline: none;
+    color-scheme: dark;
+    transition: all var(--transition-fast);
+}
+
+body.light-theme .edit-date-group input[type="datetime-local"] {
+    background: rgba(255, 255, 255, 0.9);
+    color-scheme: light;
+}
+
+.edit-date-group input[type="datetime-local"]:focus {
+    border-color: var(--secondary);
+    box-shadow: 0 0 0 3px var(--secondary-glow);
+}
+
+.edit-modal-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.edit-modal-actions .btn {
+    flex: 1;
 }
