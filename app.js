@@ -5,8 +5,12 @@ let state = {
     activities: [],
     logs: [],
     alarms: [],
+    notes: [],
     theme: 'dark'
 };
+
+// Which note the notepad is currently showing
+let currentNoteIndex = 0;
 
 // Category Color Mapping
 const CATEGORY_COLORS = {
@@ -74,6 +78,18 @@ function setupEventListeners() {
     const btnToggleAlarm = document.getElementById('btnToggleAlarm');
     if (btnToggleAlarm) btnToggleAlarm.addEventListener('click', toggleAlarmPanel);
 
+    // Notepad: header button toggles the notepad panel
+    const btnToggleNotepad = document.getElementById('btnToggleNotepad');
+    if (btnToggleNotepad) btnToggleNotepad.addEventListener('click', toggleNotepadPanel);
+
+    // Notepad: navigation, editing and note management
+    document.getElementById('notePrev').addEventListener('click', showNotePrev);
+    document.getElementById('noteNext').addEventListener('click', showNoteNext);
+    document.getElementById('noteNew').addEventListener('click', addNote);
+    document.getElementById('noteDelete').addEventListener('click', deleteCurrentNote);
+    document.getElementById('noteTitle').addEventListener('input', onNoteInput);
+    document.getElementById('noteContent').addEventListener('input', onNoteInput);
+
     // Alarm: set new alarm
     const alarmForm = document.getElementById('addAlarmForm');
     alarmForm.addEventListener('submit', (e) => {
@@ -128,6 +144,7 @@ function loadState() {
             // Ensure necessary arrays exist
             if (!state.activities) state.activities = [];
             if (!state.logs) state.logs = [];
+            if (!state.notes) state.notes = [];
             if (!state.theme) state.theme = 'dark';
             // Alarms are session-only: they are created via the "Set Alarm" button
             // and never restored from storage, so none "load" on page load.
@@ -521,6 +538,7 @@ function renderAll() {
     renderLogs();
     renderCharts();
     renderAlarms();
+    renderNotepad();
 }
 
 function renderActivities() {
@@ -729,7 +747,7 @@ function renderCharts() {
 // Data Actions utilities
 // Save a full JSON backup of activities, logs and theme — re-importable via "Upload JSON".
 function exportJSON() {
-    if (state.activities.length === 0 && state.logs.length === 0) {
+    if (state.activities.length === 0 && state.logs.length === 0 && state.notes.length === 0) {
         showToast('Nothing to save yet — add an activity first.', 'warning');
         return;
     }
@@ -740,6 +758,7 @@ function exportJSON() {
         exportedAt: new Date().toISOString(),
         activities: state.activities,
         logs: state.logs,
+        notes: state.notes,
         theme: state.theme
     };
 
@@ -785,6 +804,8 @@ function handleJSONImport(event) {
             if (Array.isArray(importedData.activities) && Array.isArray(importedData.logs)) {
                 state.activities = importedData.activities;
                 state.logs = importedData.logs;
+                state.notes = Array.isArray(importedData.notes) ? importedData.notes : [];
+                currentNoteIndex = 0;
                 if (importedData.theme) state.theme = importedData.theme;
 
                 // If a timer was running when the backup was saved, fold the
@@ -819,6 +840,8 @@ function clearAllData() {
         state.activities = [];
         state.logs = [];
         state.alarms = [];
+        state.notes = [];
+        currentNoteIndex = 0;
         ringingQueue = [];
         stopRingtone();
         hideRingingOverlay();
@@ -1450,4 +1473,122 @@ function formatCountdown(ms) {
     if (h > 0) return `${h}h ${m}m`;
     if (m > 0) return `${m}m ${s}s`;
     return `${s}s`;
+}
+
+// =======================================================================
+// NOTEPAD
+// - Toggled from the header "Notepad" button (hidden by default), shown
+//   below the Analytics Dashboard.
+// - Shows one note at a time. With more than one note, Prev/Next appear at
+//   the top to move between notes. Notes persist with your saved data.
+// =======================================================================
+
+function toggleNotepadPanel() {
+    const card = document.getElementById('notepadCard');
+    const btn = document.getElementById('btnToggleNotepad');
+    if (!card) return;
+
+    const willShow = card.classList.contains('notepad-hidden');
+    card.classList.toggle('notepad-hidden', !willShow);
+    if (btn) btn.classList.toggle('active', willShow);
+
+    if (willShow) {
+        renderNotepad();
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setTimeout(() => { try { document.getElementById('noteContent').focus(); } catch (e) {} }, 250);
+    }
+}
+
+// Render the current note + Prev/Next navigation. Avoids clobbering a field the
+// user is actively typing in.
+function renderNotepad() {
+    const card = document.getElementById('notepadCard');
+    if (!card) return;
+
+    if (state.notes.length === 0) currentNoteIndex = 0;
+    else currentNoteIndex = Math.min(Math.max(0, currentNoteIndex), state.notes.length - 1);
+
+    const note = state.notes[currentNoteIndex] || null;
+    // Safe to always set values: renderNotepad() is never called mid-keystroke
+    // (typing updates note data via onNoteInput without re-rendering).
+    document.getElementById('noteTitle').value = note ? (note.title || '') : '';
+    document.getElementById('noteContent').value = note ? (note.content || '') : '';
+
+    // Prev/Next show only when there's more than one note
+    const nav = document.getElementById('notepadNav');
+    nav.style.display = state.notes.length > 1 ? 'flex' : 'none';
+    if (state.notes.length > 1) {
+        document.getElementById('notePosition').textContent = `Note ${currentNoteIndex + 1} of ${state.notes.length}`;
+        document.getElementById('notePrev').disabled = currentNoteIndex === 0;
+        document.getElementById('noteNext').disabled = currentNoteIndex === state.notes.length - 1;
+    }
+
+    document.getElementById('noteDelete').disabled = state.notes.length === 0;
+    updateNoteSavedLabel();
+    lucide.createIcons();
+}
+
+function showNotePrev() {
+    if (currentNoteIndex > 0) {
+        currentNoteIndex--;
+        renderNotepad();
+    }
+}
+
+function showNoteNext() {
+    if (currentNoteIndex < state.notes.length - 1) {
+        currentNoteIndex++;
+        renderNotepad();
+    }
+}
+
+// Auto-save the current note as the user types. Creates the first note on the
+// first keystroke if the notepad is empty.
+function onNoteInput() {
+    if (state.notes.length === 0) {
+        state.notes.push(createBlankNote());
+        currentNoteIndex = 0;
+        document.getElementById('noteDelete').disabled = false;
+    }
+    const note = state.notes[currentNoteIndex];
+    note.title = document.getElementById('noteTitle').value;
+    note.content = document.getElementById('noteContent').value;
+    note.updatedAt = Date.now();
+    saveState();
+    updateNoteSavedLabel();
+}
+
+function addNote() {
+    state.notes.push(createBlankNote());
+    currentNoteIndex = state.notes.length - 1;
+    saveState();
+    renderNotepad();
+    try { document.getElementById('noteTitle').focus(); } catch (e) {}
+    showToast('New note added', 'success');
+}
+
+function deleteCurrentNote() {
+    if (state.notes.length === 0) return;
+    state.notes.splice(currentNoteIndex, 1);
+    if (currentNoteIndex >= state.notes.length) {
+        currentNoteIndex = Math.max(0, state.notes.length - 1);
+    }
+    saveState();
+    renderNotepad();
+    showToast('Note deleted', 'warning');
+}
+
+function createBlankNote() {
+    return {
+        id: 'note_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+        title: '',
+        content: '',
+        updatedAt: Date.now()
+    };
+}
+
+function updateNoteSavedLabel() {
+    const el = document.getElementById('noteSaved');
+    if (!el) return;
+    el.textContent = state.notes.length === 0 ? '' : 'Saved';
 }

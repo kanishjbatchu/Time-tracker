@@ -1500,3 +1500,160 @@ body.light-theme .edit-date-group input[type="datetime-local"] {
 .edit-modal-actions .btn {
     flex: 1;
 }
+
+/* ============================================================
+   NOTEPAD
+   ============================================================ */
+
+/* Header "Notepad" toggle button — violet accent, filled when open */
+#btnToggleNotepad {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+#btnToggleNotepad:hover {
+    background: rgba(139, 92, 246, 0.12);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+#btnToggleNotepad.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+
+/* Panel hidden until the header button reveals it */
+#notepadCard.notepad-hidden {
+    display: none;
+}
+
+#notepadCard {
+    animation: slideIn 0.3s ease;
+}
+
+/* Prev/Next navigation — shown only when there is more than one note */
+.notepad-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-glass);
+}
+
+.notepad-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-glass);
+    color: var(--text-main);
+    border-radius: var(--radius-md);
+    padding: 0.4rem 0.7rem;
+    font-family: var(--font-primary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.notepad-nav-btn:hover:not(:disabled) {
+    background: var(--bg-glass-hover);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.notepad-nav-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.notepad-nav-btn i,
+.notepad-nav-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.notepad-position {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* Editor */
+.notepad-title-input {
+    width: 100%;
+    font-family: var(--font-primary);
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    color: var(--text-main);
+    padding: 0.7rem 1rem;
+    font-size: 1rem;
+    font-weight: 600;
+    outline: none;
+    margin-bottom: 0.75rem;
+    transition: all var(--transition-fast);
+}
+
+body.light-theme .notepad-title-input,
+body.light-theme .notepad-textarea {
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.notepad-title-input::placeholder,
+.notepad-textarea::placeholder {
+    color: var(--text-muted);
+    opacity: 0.6;
+}
+
+.notepad-title-input:focus,
+.notepad-textarea:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+.notepad-textarea {
+    width: 100%;
+    min-height: 180px;
+    resize: vertical;
+    font-family: var(--font-primary);
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    color: var(--text-main);
+    padding: 0.85rem 1rem;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    outline: none;
+    transition: border var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+/* Footer */
+.notepad-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.notepad-saved {
+    font-size: 0.75rem;
+    color: var(--success);
+    font-weight: 600;
+}
+
+.notepad-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.notepad-actions .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
