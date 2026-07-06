@@ -33,7 +33,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     populateRingtoneOptions();
     setDefaultAlarmDateTime();
+    prepareRingtones(); // render ringtone WAVs up front so alarms can ring instantly
     startTicker();
+    startAlarmWorker(); // keep alarms firing while the tab is in the background
     renderAll();
     showToast('Welcome to ChronoFlow!', 'info');
 });
@@ -483,6 +485,35 @@ function formatDate(isoString) {
         hour: '2-digit',
         minute: '2-digit'
     });
+}
+
+// A dedicated Web Worker pings once a second on its own thread to run the alarm
+// check. Because it isn't the page's main thread, it keeps firing while the tab is
+// backgrounded and isn't delayed by main-thread work — so alarms still go off on a
+// different tab. The worker only signals; the actual check (with a wall-clock
+// comparison) runs here on the main thread. checkAlarms() is idempotent, so the
+// overlap with the main ticker never double-rings.
+let alarmWorker = null;
+
+function startAlarmWorker() {
+    if (alarmWorker || typeof Worker === 'undefined') return;
+    try {
+        const workerSrc =
+            'var t=null;' +
+            'onmessage=function(e){' +
+            'if(e.data==="start"){if(!t){t=setInterval(function(){postMessage("tick");},1000);}}' +
+            'else if(e.data==="stop"){if(t){clearInterval(t);t=null;}}' +
+            '};';
+        const url = URL.createObjectURL(new Blob([workerSrc], { type: 'application/javascript' }));
+        alarmWorker = new Worker(url);
+        alarmWorker.onmessage = function () {
+            checkAlarms();
+            updateAlarmCountdowns();
+        };
+        alarmWorker.postMessage('start');
+    } catch (e) {
+        alarmWorker = null; // no worker — the main-thread ticker still handles alarms
+    }
 }
 
 // Global Ticker to update UI dynamically for active stopwatches
@@ -948,95 +979,181 @@ const RINGTONES = {
     }
 };
 
-// --- Web Audio engine ---
-let audioCtx = null;
-let ringtonePlayer = null;   // { stop() } for whatever is currently sounding
-let previewTimeout = null;   // auto-stop timer for ringtone previews
+// --- Ringtone engine ---
+// The ringtone plays through a single <audio> element (not Web Audio oscillators),
+// because a media element keeps playing when the tab is in the background — a
+// setTimeout/oscillator loop gets throttled and goes silent. Each synthesized
+// ringtone is rendered once to an in-memory WAV (one loop cycle) and the <audio>
+// element loops it, so it rings continuously like a real alarm clock.
+let previewTimeout = null;        // auto-stop timer for ringtone previews
+let ringtoneWavUrls = {};         // ringtone key -> blob URL (one WAV loop cycle)
+let ringtonesPreparing = null;    // Promise while WAVs are being generated
+let silentWavUrl = null;          // tiny silent clip used to prime the element
 
-function getAudioContext() {
-    if (!audioCtx) {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) return null;
-        audioCtx = new AC();
-    }
-    return audioCtx;
+function getAlarmAudioEl() {
+    return document.getElementById('alarmAudio');
 }
 
-// Resume the audio context from a user gesture (browsers block audio otherwise).
+// Called on the first user gesture: build the ringtone WAVs and "prime" the audio
+// element (a gesture-initiated play) so it is allowed to play later — including
+// while the tab is inactive.
 function unlockAudio() {
-    const ctx = getAudioContext();
-    if (ctx && ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-    }
+    prepareRingtones();
+    primeAlarmAudio();
 }
 
-// Start looping a ringtone. Any sound already playing is stopped first.
+function primeAlarmAudio() {
+    const audio = getAlarmAudioEl();
+    if (!audio || audio.dataset.primed === '1') return;
+    // If the ringtone is already sounding, it's obviously unlocked — don't touch it.
+    if (audio.loop && !audio.paused) { audio.dataset.primed = '1'; return; }
+    const url = getSilentWavUrl();
+    if (!url) return;
+    audio.dataset.primed = '1'; // a gesture occurred — the element is now unlocked
+    try {
+        // Play a short SILENT clip (non-looping) so it plays out on its own in
+        // ~0.15s. No async pause, so it never interrupts a ringtone that a preview
+        // or alarm starts right after this in the same gesture.
+        audio.src = url;
+        audio.loop = false;
+        audio.muted = false;
+        audio.volume = 1;
+        const p = audio.play();
+        if (p && p.catch) p.catch(() => {});
+    } catch (e) { /* ignore */ }
+}
+
+// Render every ringtone to a looping WAV (offline, no gesture needed). Idempotent.
+function prepareRingtones() {
+    if (ringtonesPreparing) return ringtonesPreparing;
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!OAC) { ringtonesPreparing = Promise.resolve(); return ringtonesPreparing; }
+    const jobs = Object.keys(RINGTONES).map(key =>
+        renderRingtoneToUrl(RINGTONES[key], OAC)
+            .then(url => { ringtoneWavUrls[key] = url; })
+            .catch(() => {})
+    );
+    ringtonesPreparing = Promise.all(jobs);
+    return ringtonesPreparing;
+}
+
+function renderRingtoneToUrl(def, OAC) {
+    const sampleRate = 44100;
+    const cycleLen = def.notes.reduce((s, n) => s + n.d, 0);
+    const frames = Math.max(1, Math.ceil(cycleLen * sampleRate));
+    const offline = new OAC(1, frames, sampleRate);
+    const master = offline.createGain();
+    master.gain.value = 0.7;
+    master.connect(offline.destination);
+
+    let t = 0;
+    def.notes.forEach(note => {
+        if (note.f > 0) {
+            const osc = offline.createOscillator();
+            const g = offline.createGain();
+            osc.type = def.type;
+            osc.frequency.value = note.f;
+            g.gain.setValueAtTime(0.0001, t);
+            g.gain.exponentialRampToValueAtTime(1, t + 0.012);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + note.d);
+            osc.connect(g);
+            g.connect(master);
+            osc.start(t);
+            osc.stop(t + note.d);
+        }
+        t += note.d;
+    });
+
+    return offline.startRendering().then(buf =>
+        URL.createObjectURL(new Blob([audioBufferToWav(buf)], { type: 'audio/wav' }))
+    );
+}
+
+// A short silent WAV used only to unlock the audio element during a user gesture.
+function getSilentWavUrl() {
+    if (silentWavUrl) return silentWavUrl;
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!OAC) return '';
+    const sr = 44100;
+    const frames = Math.ceil(0.15 * sr);
+    const octx = new OAC(1, frames, sr);
+    const buf = octx.createBuffer(1, frames, sr); // all zeros = silence
+    silentWavUrl = URL.createObjectURL(new Blob([audioBufferToWav(buf)], { type: 'audio/wav' }));
+    return silentWavUrl;
+}
+
+// Encode an AudioBuffer as a 16-bit PCM WAV (ArrayBuffer).
+function audioBufferToWav(buffer) {
+    const numCh = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const numFrames = buffer.length;
+    const blockAlign = numCh * 2;
+    const dataSize = numFrames * blockAlign;
+    const ab = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(ab);
+    let offset = 0;
+    const wstr = (s) => { for (let i = 0; i < s.length; i++) view.setUint8(offset++, s.charCodeAt(i)); };
+    const u32 = (v) => { view.setUint32(offset, v, true); offset += 4; };
+    const u16 = (v) => { view.setUint16(offset, v, true); offset += 2; };
+    wstr('RIFF'); u32(36 + dataSize); wstr('WAVE');
+    wstr('fmt '); u32(16); u16(1); u16(numCh); u32(sampleRate);
+    u32(sampleRate * blockAlign); u16(blockAlign); u16(16);
+    wstr('data'); u32(dataSize);
+    const chans = [];
+    for (let c = 0; c < numCh; c++) chans.push(buffer.getChannelData(c));
+    for (let i = 0; i < numFrames; i++) {
+        for (let c = 0; c < numCh; c++) {
+            let s = Math.max(-1, Math.min(1, chans[c][i]));
+            s = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            view.setInt16(offset, s, true); offset += 2;
+        }
+    }
+    return ab;
+}
+
+// Start looping the chosen ringtone through the <audio> element.
 function playRingtone(key) {
     if (previewTimeout) { clearTimeout(previewTimeout); previewTimeout = null; }
-    stopRingtone();
+    const audio = getAlarmAudioEl();
+    if (!audio) return;
 
-    const def = RINGTONES[key] || RINGTONES.classic;
-    const ctx = getAudioContext();
-    if (!ctx) return; // Web Audio unavailable — alarm still pops the overlay
-    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-
-    const master = ctx.createGain();
-    master.gain.value = 0.0001;
-    master.connect(ctx.destination);
-    // Gentle fade-in so it doesn't pop
-    master.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 0.06);
-
-    let stopped = false;
-    let loopTimer = null;
-
-    function scheduleCycle() {
-        if (stopped) return;
-        let t = ctx.currentTime;
-        let cycleLength = 0;
-
-        def.notes.forEach(note => {
-            if (note.f > 0) {
-                const osc = ctx.createOscillator();
-                const g = ctx.createGain();
-                osc.type = def.type;
-                osc.frequency.value = note.f;
-                // Per-note envelope (quick attack, decay to silence)
-                g.gain.setValueAtTime(0.0001, t);
-                g.gain.exponentialRampToValueAtTime(1, t + 0.012);
-                g.gain.exponentialRampToValueAtTime(0.0001, t + note.d);
-                osc.connect(g);
-                g.connect(master);
-                osc.start(t);
-                osc.stop(t + note.d + 0.03);
-            }
-            t += note.d;
-            cycleLength += note.d;
-        });
-
-        loopTimer = setTimeout(scheduleCycle, Math.max(50, cycleLength * 1000));
-    }
-
-    scheduleCycle();
-
-    ringtonePlayer = {
-        stop() {
-            stopped = true;
-            if (loopTimer) clearTimeout(loopTimer);
-            try {
-                master.gain.cancelScheduledValues(ctx.currentTime);
-                master.gain.setValueAtTime(Math.max(master.gain.value, 0.0001), ctx.currentTime);
-                master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.1);
-            } catch (e) { /* ignore */ }
-            setTimeout(() => { try { master.disconnect(); } catch (e) {} }, 200);
-        }
+    const startWith = (url) => {
+        if (!url) return;
+        try {
+            audio.src = url;
+            audio.loop = true;
+            audio.muted = false;
+            audio.volume = 0.7;
+            audio.currentTime = 0;
+            const p = audio.play();
+            if (p && p.catch) p.catch(() => {});
+        } catch (e) { /* ignore */ }
     };
+
+    if (ringtoneWavUrls[key]) {
+        startWith(ringtoneWavUrls[key]);
+    } else {
+        // WAVs not generated yet — build them, then play
+        prepareRingtones().then(() =>
+            startWith(ringtoneWavUrls[key] || ringtoneWavUrls[Object.keys(RINGTONES)[0]])
+        );
+    }
 }
 
 function stopRingtone() {
-    if (ringtonePlayer) {
-        ringtonePlayer.stop();
-        ringtonePlayer = null;
-    }
+    const audio = getAlarmAudioEl();
+    if (!audio) return;
+    try {
+        audio.pause();
+        audio.loop = false;
+        audio.currentTime = 0;
+    } catch (e) { /* ignore */ }
+}
+
+// Is the ringtone currently sounding?
+function isRingtonePlaying() {
+    const audio = getAlarmAudioEl();
+    return !!(audio && audio.loop && !audio.paused);
 }
 
 // When the alarm fires, stop ChronoFlow's OWN sounds so the chosen ringtone plays
@@ -1049,6 +1166,7 @@ function stopRingtone() {
 // apps or browser tabs.
 function muteOtherSounds(stopPreview) {
     document.querySelectorAll('audio, video').forEach(el => {
+        if (el.id === 'alarmAudio') return; // never pause our own ringtone
         if (!el.paused) {
             try { el.pause(); } catch (e) {}
         }
