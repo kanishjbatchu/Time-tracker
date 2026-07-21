@@ -1502,56 +1502,107 @@ body.light-theme .edit-date-group input[type="datetime-local"] {
 }
 
 /* ============================================================
-   NOTEPAD
+   TIMER
    ============================================================ */
 
-/* Header "Notepad" toggle button — violet accent, filled when open */
-#btnToggleNotepad {
-    border-color: var(--primary);
-    color: var(--primary);
+/* Header "Timer" toggle button — amber accent, filled when open */
+#btnToggleTimer {
+    border-color: var(--warning);
+    color: var(--warning);
 }
 
-#btnToggleNotepad:hover {
-    background: rgba(139, 92, 246, 0.12);
-    border-color: var(--primary);
-    color: var(--primary);
+#btnToggleTimer:hover {
+    background: rgba(245, 158, 11, 0.12);
+    border-color: var(--warning);
+    color: var(--warning);
 }
 
-#btnToggleNotepad.active {
-    background: var(--primary);
-    border-color: var(--primary);
+#btnToggleTimer.active {
+    background: var(--warning);
+    border-color: var(--warning);
     color: #fff;
 }
 
 /* Panel hidden until the header button reveals it */
-#notepadCard.notepad-hidden {
+#timerCard.timer-hidden {
     display: none;
 }
 
-#notepadCard {
+#timerCard {
     animation: slideIn 0.3s ease;
 }
 
-/* Prev/Next navigation — shown only when there is more than one note */
-.notepad-nav {
+/* Duration inputs (H : M : S) */
+.timer-duration-row {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    align-items: flex-end;
+    justify-content: center;
     gap: 0.5rem;
-    margin-bottom: 1rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid var(--border-glass);
+    margin: 1.25rem 0;
 }
 
-.notepad-nav-btn {
-    display: inline-flex;
+.timer-field {
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.35rem;
+    flex: 1;
+}
+
+.timer-field input {
+    width: 100%;
+    font-family: var(--font-primary);
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    color: var(--text-main);
+    padding: 0.75rem 0.4rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    outline: none;
+    transition: all var(--transition-fast);
+}
+
+body.light-theme .timer-field input {
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.timer-field input:focus {
+    border-color: var(--warning);
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25);
+}
+
+.timer-field label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.timer-colon {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    padding-bottom: 1.7rem;
+}
+
+/* Quick presets */
+.timer-presets {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+}
+
+.timer-preset {
     background: var(--bg-glass);
     border: 1px solid var(--border-glass);
-    color: var(--text-main);
+    color: var(--text-muted);
     border-radius: var(--radius-md);
-    padding: 0.4rem 0.7rem;
+    padding: 0.5rem 0;
     font-family: var(--font-primary);
     font-size: 0.8rem;
     font-weight: 600;
@@ -1559,101 +1610,65 @@ body.light-theme .edit-date-group input[type="datetime-local"] {
     transition: all var(--transition-fast);
 }
 
-.notepad-nav-btn:hover:not(:disabled) {
+.timer-preset:hover {
     background: var(--bg-glass-hover);
-    border-color: var(--primary);
-    color: var(--primary);
+    border-color: var(--warning);
+    color: var(--warning);
 }
 
-.notepad-nav-btn:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-}
-
-.notepad-nav-btn i,
-.notepad-nav-btn svg {
-    width: 16px;
-    height: 16px;
-}
-
-.notepad-position {
-    font-size: 0.8rem;
-    font-weight: 700;
+/* Running view */
+.timer-label-display {
+    text-align: center;
     color: var(--text-muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+    min-height: 1.1rem;
+    margin-bottom: 0.25rem;
+}
+
+.timer-display {
+    text-align: center;
+    font-size: 3rem;
+    font-weight: 800;
     font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-
-/* Editor */
-.notepad-title-input {
-    width: 100%;
-    font-family: var(--font-primary);
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid var(--border-glass);
-    border-radius: var(--radius-md);
+    letter-spacing: -1px;
     color: var(--text-main);
-    padding: 0.7rem 1rem;
-    font-size: 1rem;
-    font-weight: 600;
-    outline: none;
-    margin-bottom: 0.75rem;
-    transition: all var(--transition-fast);
+    line-height: 1.1;
+    margin-bottom: 1rem;
 }
 
-body.light-theme .notepad-title-input,
-body.light-theme .notepad-textarea {
-    background: rgba(255, 255, 255, 0.9);
-}
-
-.notepad-title-input::placeholder,
-.notepad-textarea::placeholder {
-    color: var(--text-muted);
-    opacity: 0.6;
-}
-
-.notepad-title-input:focus,
-.notepad-textarea:focus {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px var(--primary-glow);
-}
-
-.notepad-textarea {
+.timer-progress {
     width: 100%;
-    min-height: 180px;
-    resize: vertical;
-    font-family: var(--font-primary);
+    height: 8px;
     background: rgba(0, 0, 0, 0.25);
-    border: 1px solid var(--border-glass);
-    border-radius: var(--radius-md);
-    color: var(--text-main);
-    padding: 0.85rem 1rem;
-    font-size: 0.95rem;
-    line-height: 1.6;
-    outline: none;
-    transition: border var(--transition-fast), box-shadow var(--transition-fast);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-bottom: 1.25rem;
 }
 
-/* Footer */
-.notepad-footer {
+body.light-theme .timer-progress {
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.timer-progress-bar {
+    height: 100%;
+    width: 100%;
+    background: var(--warning);
+    border-radius: 999px;
+    transition: width 0.4s linear;
+}
+
+.timer-controls {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    margin-top: 1rem;
+    gap: 0.75rem;
 }
 
-.notepad-saved {
-    font-size: 0.75rem;
-    color: var(--success);
-    font-weight: 600;
+.timer-controls .btn {
+    flex: 1;
 }
 
-.notepad-actions {
-    display: flex;
-    gap: 0.5rem;
-}
-
-.notepad-actions .btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
+/* Timer ringing overlay bell — amber instead of the alarm's red */
+.timer-ring-bell {
+    background: var(--warning);
+    box-shadow: 0 0 30px rgba(245, 158, 11, 0.4);
 }

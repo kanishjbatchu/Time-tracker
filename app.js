@@ -5,12 +5,19 @@ let state = {
     activities: [],
     logs: [],
     alarms: [],
-    notes: [],
     theme: 'dark'
 };
 
-// Which note the notepad is currently showing
-let currentNoteIndex = 0;
+// --- Timer (countdown) state — session-only, not persisted ---
+let timer = {
+    configuredSeconds: 300, // last-set duration in seconds
+    remainingSeconds: 300,  // remaining while paused
+    endTime: null,          // wall-clock ms when it hits 0 (while running)
+    isRunning: false,       // actively counting down
+    active: false,          // a countdown session exists (running or paused)
+    label: '',
+    ringtone: 'classic'
+};
 
 // Category Color Mapping
 const CATEGORY_COLORS = {
@@ -80,17 +87,19 @@ function setupEventListeners() {
     const btnToggleAlarm = document.getElementById('btnToggleAlarm');
     if (btnToggleAlarm) btnToggleAlarm.addEventListener('click', toggleAlarmPanel);
 
-    // Notepad: header button toggles the notepad panel
-    const btnToggleNotepad = document.getElementById('btnToggleNotepad');
-    if (btnToggleNotepad) btnToggleNotepad.addEventListener('click', toggleNotepadPanel);
+    // Timer: header button toggles the timer panel
+    const btnToggleTimer = document.getElementById('btnToggleTimer');
+    if (btnToggleTimer) btnToggleTimer.addEventListener('click', toggleTimerPanel);
 
-    // Notepad: navigation, editing and note management
-    document.getElementById('notePrev').addEventListener('click', showNotePrev);
-    document.getElementById('noteNext').addEventListener('click', showNoteNext);
-    document.getElementById('noteNew').addEventListener('click', addNote);
-    document.getElementById('noteDelete').addEventListener('click', deleteCurrentNote);
-    document.getElementById('noteTitle').addEventListener('input', onNoteInput);
-    document.getElementById('noteContent').addEventListener('input', onNoteInput);
+    // Timer: setup + running controls
+    document.getElementById('btnTimerStart').addEventListener('click', startTimer);
+    document.getElementById('btnTimerPauseResume').addEventListener('click', toggleTimerPause);
+    document.getElementById('btnTimerReset').addEventListener('click', () => { resetTimer(); showToast('Timer reset', 'info'); });
+    document.getElementById('btnTimerStop').addEventListener('click', dismissTimer);
+    document.getElementById('btnTimerPreview').addEventListener('click', () => previewRingtone('timerRingtone', 'btnTimerPreview'));
+    document.querySelectorAll('.timer-preset').forEach((btn) => {
+        btn.addEventListener('click', () => applyTimerPreset(parseInt(btn.dataset.seconds, 10) || 0));
+    });
 
     // Alarm: set new alarm
     const alarmForm = document.getElementById('addAlarmForm');
@@ -108,7 +117,7 @@ function setupEventListeners() {
     });
 
     // Alarm: preview the selected ringtone
-    document.getElementById('btnPreviewRingtone').addEventListener('click', previewRingtone);
+    document.getElementById('btnPreviewRingtone').addEventListener('click', () => previewRingtone('alarmRingtone', 'btnPreviewRingtone'));
 
     // Alarm: ringing overlay controls
     document.getElementById('btnStopAlarm').addEventListener('click', dismissCurrentAlarm);
@@ -146,8 +155,8 @@ function loadState() {
             // Ensure necessary arrays exist
             if (!state.activities) state.activities = [];
             if (!state.logs) state.logs = [];
-            if (!state.notes) state.notes = [];
             if (!state.theme) state.theme = 'dark';
+            delete state.notes; // drop any leftover data from the removed notepad
             // Alarms are session-only: they are created via the "Set Alarm" button
             // and never restored from storage, so none "load" on page load.
             state.alarms = [];
@@ -509,6 +518,7 @@ function startAlarmWorker() {
         alarmWorker.onmessage = function () {
             checkAlarms();
             updateAlarmCountdowns();
+            checkTimer();
         };
         alarmWorker.postMessage('start');
     } catch (e) {
@@ -520,9 +530,11 @@ function startAlarmWorker() {
 function startTicker() {
     if (tickInterval) clearInterval(tickInterval);
     tickInterval = setInterval(() => {
-        // Fire any alarms whose time has arrived, then refresh their countdowns
+        // Fire any alarms / the timer that are due, then refresh their readouts
         checkAlarms();
         updateAlarmCountdowns();
+        checkTimer();
+        updateTimerDisplay();
 
         let activeCounts = 0;
         let totalLiveTodaySec = 0;
@@ -569,7 +581,7 @@ function renderAll() {
     renderLogs();
     renderCharts();
     renderAlarms();
-    renderNotepad();
+    renderTimer();
 }
 
 function renderActivities() {
@@ -778,18 +790,17 @@ function renderCharts() {
 // Data Actions utilities
 // Save a full JSON backup of activities, logs and theme — re-importable via "Upload JSON".
 function exportJSON() {
-    if (state.activities.length === 0 && state.logs.length === 0 && state.notes.length === 0) {
+    if (state.activities.length === 0 && state.logs.length === 0) {
         showToast('Nothing to save yet — add an activity first.', 'warning');
         return;
     }
 
-    // Alarms are session-only and intentionally not included in backups.
+    // Alarms and the timer are session-only and intentionally not backed up.
     const backup = {
         version: 1,
         exportedAt: new Date().toISOString(),
         activities: state.activities,
         logs: state.logs,
-        notes: state.notes,
         theme: state.theme
     };
 
@@ -835,8 +846,6 @@ function handleJSONImport(event) {
             if (Array.isArray(importedData.activities) && Array.isArray(importedData.logs)) {
                 state.activities = importedData.activities;
                 state.logs = importedData.logs;
-                state.notes = Array.isArray(importedData.notes) ? importedData.notes : [];
-                currentNoteIndex = 0;
                 if (importedData.theme) state.theme = importedData.theme;
 
                 // If a timer was running when the backup was saved, fold the
@@ -871,11 +880,12 @@ function clearAllData() {
         state.activities = [];
         state.logs = [];
         state.alarms = [];
-        state.notes = [];
-        currentNoteIndex = 0;
         ringingQueue = [];
         stopRingtone();
         hideRingingOverlay();
+        hideTimerOverlay();
+        stopAlarmAttention();
+        resetTimer();
         saveState();
         renderAll();
         showToast('All app data has been reset.', 'warning');
@@ -1172,9 +1182,8 @@ function muteOtherSounds(stopPreview) {
         }
     });
     if (stopPreview) {
-        if (previewTimeout) { clearTimeout(previewTimeout); previewTimeout = null; }
         stopRingtone();
-        setPreviewIcon(false);
+        resetPreview();
     }
 }
 
@@ -1213,31 +1222,41 @@ function stopAlarmAttention() {
     }
 }
 
-// --- Ringtone preview ---
-function previewRingtone() {
+// --- Ringtone preview (shared by the alarm and timer ringtone pickers) ---
+let activePreviewBtnId = null;
+
+function previewRingtone(selectId, btnId) {
     // If a preview is already playing, treat the click as "stop".
     if (previewTimeout) {
-        clearTimeout(previewTimeout);
-        previewTimeout = null;
         stopRingtone();
-        setPreviewIcon(false);
+        resetPreview();
         return;
     }
     if (ringingQueue.length > 0) return; // don't fight a live alarm
 
-    const key = document.getElementById('alarmRingtone').value;
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
     unlockAudio();
-    playRingtone(key);
-    setPreviewIcon(true);
+    playRingtone(sel.value);
+    activePreviewBtnId = btnId;
+    setPreviewIcon(btnId, true);
     previewTimeout = setTimeout(() => {
         stopRingtone();
-        previewTimeout = null;
-        setPreviewIcon(false);
+        resetPreview();
     }, 3500);
 }
 
-function setPreviewIcon(playing) {
-    const btn = document.getElementById('btnPreviewRingtone');
+// Clear the preview timer and restore the active preview button's icon.
+function resetPreview() {
+    if (previewTimeout) { clearTimeout(previewTimeout); previewTimeout = null; }
+    if (activePreviewBtnId) {
+        setPreviewIcon(activePreviewBtnId, false);
+        activePreviewBtnId = null;
+    }
+}
+
+function setPreviewIcon(btnId, playing) {
+    const btn = document.getElementById(btnId);
     if (!btn) return;
     btn.innerHTML = `<i data-lucide="${playing ? 'square' : 'play'}"></i>`;
     btn.title = playing ? 'Stop preview' : 'Preview ringtone';
@@ -1245,15 +1264,17 @@ function setPreviewIcon(playing) {
 }
 
 function populateRingtoneOptions() {
-    const sel = document.getElementById('alarmRingtone');
-    if (!sel) return;
-    sel.innerHTML = '';
-    Object.keys(RINGTONES).forEach((key, i) => {
-        const opt = document.createElement('option');
-        opt.value = key;
-        opt.textContent = RINGTONES[key].name;
-        if (i === 0) opt.selected = true;
-        sel.appendChild(opt);
+    ['alarmRingtone', 'timerRingtone'].forEach((id) => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        sel.innerHTML = '';
+        Object.keys(RINGTONES).forEach((key, i) => {
+            const opt = document.createElement('option');
+            opt.value = key;
+            opt.textContent = RINGTONES[key].name;
+            if (i === 0) opt.selected = true;
+            sel.appendChild(opt);
+        });
     });
 }
 
@@ -1594,119 +1615,183 @@ function formatCountdown(ms) {
 }
 
 // =======================================================================
-// NOTEPAD
-// - Toggled from the header "Notepad" button (hidden by default), shown
-//   below the Analytics Dashboard.
-// - Shows one note at a time. With more than one note, Prev/Next appear at
-//   the top to move between notes. Notes persist with your saved data.
+// TIMER (countdown)
+// - Toggled from the header "Timer" button (hidden by default).
+// - Fully customizable: duration (H/M/S), quick presets, label, ringtone.
+// - When it reaches zero it rings AND stops every running stopwatch.
+// - Session-only (not persisted). Driven by the same ticker + Web Worker as
+//   the alarm, so it also fires while the tab is in the background.
 // =======================================================================
 
-function toggleNotepadPanel() {
-    const card = document.getElementById('notepadCard');
-    const btn = document.getElementById('btnToggleNotepad');
+function toggleTimerPanel() {
+    const card = document.getElementById('timerCard');
+    const btn = document.getElementById('btnToggleTimer');
     if (!card) return;
 
-    const willShow = card.classList.contains('notepad-hidden');
-    card.classList.toggle('notepad-hidden', !willShow);
+    const willShow = card.classList.contains('timer-hidden');
+    card.classList.toggle('timer-hidden', !willShow);
     if (btn) btn.classList.toggle('active', willShow);
 
     if (willShow) {
-        renderNotepad();
+        renderTimer();
+        unlockAudio(); // gesture — prime audio so the timer can ring in a background tab
         card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        setTimeout(() => { try { document.getElementById('noteContent').focus(); } catch (e) {} }, 250);
     }
 }
 
-// Render the current note + Prev/Next navigation. Avoids clobbering a field the
-// user is actively typing in.
-function renderNotepad() {
-    const card = document.getElementById('notepadCard');
-    if (!card) return;
+// Read the H / M / S setup inputs into a total number of seconds.
+function readTimerSetupSeconds() {
+    const h = Math.max(0, parseInt(document.getElementById('timerHours').value, 10) || 0);
+    const m = Math.max(0, parseInt(document.getElementById('timerMinutes').value, 10) || 0);
+    const s = Math.max(0, parseInt(document.getElementById('timerSeconds').value, 10) || 0);
+    return h * 3600 + m * 60 + s;
+}
 
-    if (state.notes.length === 0) currentNoteIndex = 0;
-    else currentNoteIndex = Math.min(Math.max(0, currentNoteIndex), state.notes.length - 1);
+function applyTimerPreset(seconds) {
+    document.getElementById('timerHours').value = Math.floor(seconds / 3600);
+    document.getElementById('timerMinutes').value = Math.floor((seconds % 3600) / 60);
+    document.getElementById('timerSeconds').value = seconds % 60;
+}
 
-    const note = state.notes[currentNoteIndex] || null;
-    // Safe to always set values: renderNotepad() is never called mid-keystroke
-    // (typing updates note data via onNoteInput without re-rendering).
-    document.getElementById('noteTitle').value = note ? (note.title || '') : '';
-    document.getElementById('noteContent').value = note ? (note.content || '') : '';
-
-    // Prev/Next show only when there's more than one note
-    const nav = document.getElementById('notepadNav');
-    nav.style.display = state.notes.length > 1 ? 'flex' : 'none';
-    if (state.notes.length > 1) {
-        document.getElementById('notePosition').textContent = `Note ${currentNoteIndex + 1} of ${state.notes.length}`;
-        document.getElementById('notePrev').disabled = currentNoteIndex === 0;
-        document.getElementById('noteNext').disabled = currentNoteIndex === state.notes.length - 1;
+function startTimer() {
+    const total = readTimerSetupSeconds();
+    if (total <= 0) {
+        showToast('Set a duration greater than zero.', 'warning');
+        return;
     }
+    timer.label = document.getElementById('timerLabel').value.trim();
+    timer.ringtone = document.getElementById('timerRingtone').value || 'classic';
+    timer.configuredSeconds = total;
+    timer.remainingSeconds = total;
+    timer.endTime = Date.now() + total * 1000;
+    timer.isRunning = true;
+    timer.active = true;
+    unlockAudio(); // gesture — prime audio for background ringing
+    renderTimer();
+    showToast(`Timer started for ${formatTimerTime(total)}`, 'success');
+}
 
-    document.getElementById('noteDelete').disabled = state.notes.length === 0;
-    updateNoteSavedLabel();
+function toggleTimerPause() {
+    if (!timer.active) return;
+    if (timer.isRunning) {
+        timer.remainingSeconds = Math.max(0, Math.ceil((timer.endTime - Date.now()) / 1000));
+        timer.isRunning = false;
+        timer.endTime = null;
+    } else {
+        timer.isRunning = true;
+        timer.endTime = Date.now() + timer.remainingSeconds * 1000;
+    }
+    renderTimer();
+}
+
+function resetTimer() {
+    timer.isRunning = false;
+    timer.active = false;
+    timer.endTime = null;
+    timer.remainingSeconds = timer.configuredSeconds;
+    renderTimer();
+}
+
+// Runs every tick (main thread + worker). Fires the timer when it reaches zero.
+function checkTimer() {
+    if (timer.active && timer.isRunning && timer.endTime && Date.now() >= timer.endTime) {
+        fireTimer();
+    }
+}
+
+function fireTimer() {
+    timer.isRunning = false;
+    timer.active = false;
+    timer.endTime = null;
+    timer.remainingSeconds = 0;
+
+    // Requirement: when the timer rings, stop every running stopwatch.
+    const pausedCount = pauseAllRunningStopwatches();
+    resetPreview(); // stop any ringtone preview
+    renderActivities();
+    renderTimer();  // fall back to the setup view underneath the overlay
+
+    playRingtone(timer.ringtone);
+    showTimerOverlay(pausedCount);
+    startAlarmAttention(); // flash the tab title + buzz (shared with the alarm)
+}
+
+function dismissTimer() {
+    stopRingtone();
+    stopAlarmAttention();
+    hideTimerOverlay();
+}
+
+function showTimerOverlay(pausedCount) {
+    const overlay = document.getElementById('timerRingOverlay');
+    if (!overlay) return;
+    document.getElementById('timerRingLabel').textContent =
+        (timer.label && timer.label.trim()) ? timer.label : "Time's up!";
+    document.getElementById('timerRingExtra').textContent =
+        pausedCount > 0 ? `Stopped ${pausedCount} running stopwatch${pausedCount > 1 ? 'es' : ''}` : '';
+    overlay.classList.add('active');
+    overlay.setAttribute('aria-hidden', 'false');
     lucide.createIcons();
 }
 
-function showNotePrev() {
-    if (currentNoteIndex > 0) {
-        currentNoteIndex--;
-        renderNotepad();
+function hideTimerOverlay() {
+    const overlay = document.getElementById('timerRingOverlay');
+    if (!overlay) return;
+    overlay.classList.remove('active');
+    overlay.setAttribute('aria-hidden', 'true');
+}
+
+// Full render: switches between the setup and running views + button/icon states.
+function renderTimer() {
+    const setup = document.getElementById('timerSetup');
+    const running = document.getElementById('timerRunning');
+    if (!setup || !running) return;
+
+    if (timer.active) {
+        setup.style.display = 'none';
+        running.style.display = 'block';
+
+        const remaining = timer.isRunning
+            ? Math.max(0, Math.ceil((timer.endTime - Date.now()) / 1000))
+            : timer.remainingSeconds;
+        document.getElementById('timerDisplay').textContent = formatTimerTime(remaining);
+        document.getElementById('timerLabelDisplay').textContent = timer.label || '';
+
+        const bar = document.getElementById('timerProgressBar');
+        if (bar && timer.configuredSeconds > 0) {
+            bar.style.width = Math.max(0, Math.min(100, (remaining / timer.configuredSeconds) * 100)) + '%';
+        }
+
+        const btn = document.getElementById('btnTimerPauseResume');
+        if (btn) {
+            btn.innerHTML = timer.isRunning
+                ? '<i data-lucide="pause"></i><span>Pause</span>'
+                : '<i data-lucide="play"></i><span>Resume</span>';
+        }
+    } else {
+        setup.style.display = 'block';
+        running.style.display = 'none';
+    }
+    lucide.createIcons();
+}
+
+// Lightweight per-second update of just the countdown text + progress bar.
+function updateTimerDisplay() {
+    if (!timer.active || !timer.isRunning || !timer.endTime) return;
+    const remaining = Math.max(0, Math.ceil((timer.endTime - Date.now()) / 1000));
+    const disp = document.getElementById('timerDisplay');
+    if (disp) disp.textContent = formatTimerTime(remaining);
+    const bar = document.getElementById('timerProgressBar');
+    if (bar && timer.configuredSeconds > 0) {
+        bar.style.width = Math.max(0, Math.min(100, (remaining / timer.configuredSeconds) * 100)) + '%';
     }
 }
 
-function showNoteNext() {
-    if (currentNoteIndex < state.notes.length - 1) {
-        currentNoteIndex++;
-        renderNotepad();
-    }
-}
-
-// Auto-save the current note as the user types. Creates the first note on the
-// first keystroke if the notepad is empty.
-function onNoteInput() {
-    if (state.notes.length === 0) {
-        state.notes.push(createBlankNote());
-        currentNoteIndex = 0;
-        document.getElementById('noteDelete').disabled = false;
-    }
-    const note = state.notes[currentNoteIndex];
-    note.title = document.getElementById('noteTitle').value;
-    note.content = document.getElementById('noteContent').value;
-    note.updatedAt = Date.now();
-    saveState();
-    updateNoteSavedLabel();
-}
-
-function addNote() {
-    state.notes.push(createBlankNote());
-    currentNoteIndex = state.notes.length - 1;
-    saveState();
-    renderNotepad();
-    try { document.getElementById('noteTitle').focus(); } catch (e) {}
-    showToast('New note added', 'success');
-}
-
-function deleteCurrentNote() {
-    if (state.notes.length === 0) return;
-    state.notes.splice(currentNoteIndex, 1);
-    if (currentNoteIndex >= state.notes.length) {
-        currentNoteIndex = Math.max(0, state.notes.length - 1);
-    }
-    saveState();
-    renderNotepad();
-    showToast('Note deleted', 'warning');
-}
-
-function createBlankNote() {
-    return {
-        id: 'note_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
-        title: '',
-        content: '',
-        updatedAt: Date.now()
-    };
-}
-
-function updateNoteSavedLabel() {
-    const el = document.getElementById('noteSaved');
-    if (!el) return;
-    el.textContent = state.notes.length === 0 ? '' : 'Saved';
+function formatTimerTime(totalSeconds) {
+    totalSeconds = Math.max(0, Math.floor(totalSeconds));
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    const pad = (n) => String(n).padStart(2, '0');
+    return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
