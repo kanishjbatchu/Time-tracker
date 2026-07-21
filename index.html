@@ -1630,6 +1630,11 @@ body.light-theme .timer-field input {
     color: var(--warning);
 }
 
+/* Small gap between the ringtone picker and the Start button */
+#btnTimerStart {
+    margin-top: 1rem;
+}
+
 /* Running view */
 .timer-label-display {
     text-align: center;
@@ -1648,6 +1653,17 @@ body.light-theme .timer-field input {
     letter-spacing: -1px;
     color: var(--text-main);
     line-height: 1.1;
+    margin-bottom: 0.35rem;
+}
+
+/* Projected finish clock time shown under the countdown */
+.timer-ends-at {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    min-height: 1rem;
     margin-bottom: 1rem;
 }
 
@@ -1878,6 +1894,7 @@ body.light-theme .timer-progress {
                     <div id="timerRunning" style="display: none;">
                         <div class="timer-label-display" id="timerLabelDisplay"></div>
                         <div class="timer-display" id="timerDisplay">05:00</div>
+                        <div class="timer-ends-at" id="timerEndsAt"></div>
                         <div class="timer-progress">
                             <div class="timer-progress-bar" id="timerProgressBar"></div>
                         </div>
@@ -2021,6 +2038,7 @@ body.light-theme .timer-progress {
             </div>
             <h2 class="alarm-ring-title">Timer</h2>
             <p class="alarm-ring-label" id="timerRingLabel">Time's up!</p>
+            <p class="alarm-ring-time" id="timerRingTime"></p>
             <p class="alarm-ring-extra" id="timerRingExtra"></p>
             <div class="alarm-ring-actions">
                 <button class="btn btn-danger btn-block" id="btnTimerStop">
@@ -3810,6 +3828,7 @@ function showTimerOverlay(pausedCount) {
     if (!overlay) return;
     document.getElementById('timerRingLabel').textContent =
         (timer.label && timer.label.trim()) ? timer.label : "Time's up!";
+    document.getElementById('timerRingTime').textContent = 'Finished at ' + formatClockTime(Date.now());
     document.getElementById('timerRingExtra').textContent =
         pausedCount > 0 ? `Stopped ${pausedCount} running stopwatch${pausedCount > 1 ? 'es' : ''}` : '';
     overlay.classList.add('active');
@@ -3839,6 +3858,11 @@ function renderTimer() {
             : timer.remainingSeconds;
         document.getElementById('timerDisplay').textContent = formatTimerTime(remaining);
         document.getElementById('timerLabelDisplay').textContent = timer.label || '';
+
+        const endsAt = document.getElementById('timerEndsAt');
+        if (endsAt) {
+            endsAt.textContent = timer.isRunning ? 'Ends at ' + formatClockTime(timer.endTime) : 'Paused';
+        }
 
         const bar = document.getElementById('timerProgressBar');
         if (bar && timer.configuredSeconds > 0) {

@@ -1727,6 +1727,7 @@ function showTimerOverlay(pausedCount) {
     if (!overlay) return;
     document.getElementById('timerRingLabel').textContent =
         (timer.label && timer.label.trim()) ? timer.label : "Time's up!";
+    document.getElementById('timerRingTime').textContent = 'Finished at ' + formatClockTime(Date.now());
     document.getElementById('timerRingExtra').textContent =
         pausedCount > 0 ? `Stopped ${pausedCount} running stopwatch${pausedCount > 1 ? 'es' : ''}` : '';
     overlay.classList.add('active');
@@ -1756,6 +1757,11 @@ function renderTimer() {
             : timer.remainingSeconds;
         document.getElementById('timerDisplay').textContent = formatTimerTime(remaining);
         document.getElementById('timerLabelDisplay').textContent = timer.label || '';
+
+        const endsAt = document.getElementById('timerEndsAt');
+        if (endsAt) {
+            endsAt.textContent = timer.isRunning ? 'Ends at ' + formatClockTime(timer.endTime) : 'Paused';
+        }
 
         const bar = document.getElementById('timerProgressBar');
         if (bar && timer.configuredSeconds > 0) {

@@ -1616,6 +1616,11 @@ body.light-theme .timer-field input {
     color: var(--warning);
 }
 
+/* Small gap between the ringtone picker and the Start button */
+#btnTimerStart {
+    margin-top: 1rem;
+}
+
 /* Running view */
 .timer-label-display {
     text-align: center;
@@ -1634,6 +1639,17 @@ body.light-theme .timer-field input {
     letter-spacing: -1px;
     color: var(--text-main);
     line-height: 1.1;
+    margin-bottom: 0.35rem;
+}
+
+/* Projected finish clock time shown under the countdown */
+.timer-ends-at {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    min-height: 1rem;
     margin-bottom: 1rem;
 }
 
