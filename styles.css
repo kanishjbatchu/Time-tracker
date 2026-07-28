@@ -480,9 +480,10 @@ body.light-theme .chart-hole {
 .chart-text-num {
     font-family: var(--font-primary);
     font-weight: 800;
-    font-size: 24px;
+    font-size: 20px;
     fill: var(--text-main);
     text-anchor: middle;
+    font-variant-numeric: tabular-nums;
     transform: rotate(90deg);
     transform-origin: 100px 100px;
 }
@@ -1543,7 +1544,7 @@ body.light-theme .edit-date-group input[type="datetime-local"] {
 
 .timer-field {
     display: flex;
-    flex-direction: column;
+    flex-direction: column-reverse; /* label above the box (matches the edit dialog) */
     align-items: center;
     gap: 0.35rem;
     flex: 1;

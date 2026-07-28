@@ -723,9 +723,8 @@ function renderCharts() {
         }
     });
 
-    // Populate total hours text
-    const totalHours = (totalDuration / 3600).toFixed(1);
-    totalHoursEl.textContent = `${totalHours}h`;
+    // Populate center total as hrs:min:sec
+    totalHoursEl.textContent = formatDuration(totalDuration);
 
     if (totalDuration === 0) {
         // Empty state chart segment (gray ring)
@@ -771,14 +770,13 @@ function renderCharts() {
         
         segmentsG.appendChild(path);
         
-        // Add legend item
-        const hours = (cat.duration / 3600).toFixed(2);
+        // Add legend item — show the actual tracked time as hrs:min:sec
         const legendItem = document.createElement('div');
         legendItem.className = 'legend-item';
         legendItem.innerHTML = `
             <span class="legend-color" style="background-color: ${cat.color}"></span>
             <span style="font-weight: 500;">${cat.name}</span>
-            <span class="legend-percent">${percentage.toFixed(0)}% (${hours}h)</span>
+            <span class="legend-percent">${percentage.toFixed(0)}% (${formatDuration(cat.duration)})</span>
         `;
         legendEl.appendChild(legendItem);
         
