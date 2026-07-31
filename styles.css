@@ -1830,7 +1830,7 @@ body.light-theme .timer-progress {
 /* Theme Type presets (Default / Birthday / Halloween / Winter, ...) */
 .theme-type-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 0.6rem;
 }
 
@@ -1933,8 +1933,10 @@ body.light-theme .timer-progress {
     100% { transform: translate(0, 115vh); }
 }
 
-/* Halloween: bats wing across the screen from one side to the other */
-.deco-bat {
+/* Fly across the screen from one side to the other — bats (Halloween),
+   seagulls (Summer), rockets/UFOs (Space) all share this. */
+.deco-bat,
+.deco-flyover {
     top: var(--y, 20%);
     left: -10vw;
     font-size: var(--size, 22px);
@@ -1950,7 +1952,8 @@ body.light-theme .timer-progress {
     100% { transform: translate(130vw, 0); opacity: 0; }
 }
 
-/* Halloween: ghosts / pumpkins gently bob in place */
+/* Gently bob in place — ghosts/pumpkins (Halloween), school supplies,
+   beach items (Summer), planets/astronaut (Space) all share this. */
 .deco-bob {
     top: var(--y, 30%);
     font-size: var(--size, 26px);
@@ -1961,6 +1964,26 @@ body.light-theme .timer-progress {
 @keyframes deco-bob {
     0%   { transform: translate(0, 0); }
     100% { transform: translate(var(--drift, 18px), -22px); }
+}
+
+/* Summer: bubbles rise like balloons, but plain and translucent */
+.deco-bubble {
+    font-size: var(--size, 20px);
+    opacity: 0.55;
+    animation: deco-rise var(--duration, 16s) linear var(--delay, 0s) infinite;
+}
+
+/* Space: a static star field that twinkles in place */
+.deco-twinkle {
+    top: var(--y, 20%);
+    font-size: var(--size, 10px);
+    color: #fff;
+    animation: deco-twinkle var(--duration, 3s) ease-in-out var(--delay, 0s) infinite;
+}
+
+@keyframes deco-twinkle {
+    0%, 100% { opacity: 0.15; transform: scale(0.8); }
+    50%      { opacity: 0.9;  transform: scale(1.15); }
 }
 
 /* Halloween: static cobwebs tucked into the top corners */

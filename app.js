@@ -45,6 +45,24 @@ const THEME_TYPES = {
         primary: '#0ea5e9', glow: 'rgba(14, 165, 233, 0.28)', gradient: 'linear-gradient(135deg, #0ea5e9 0%, #a5f3fc 100%)',
         secondary: '#6366f1', secondaryGlow: 'rgba(99, 102, 241, 0.28)', secondaryGradient: 'linear-gradient(135deg, #6366f1 0%, #38bdf8 100%)',
         bgGlow1: 'rgba(14, 165, 233, 0.16)', bgGlow2: 'rgba(99, 102, 241, 0.14)', bgGlow3: 'rgba(165, 243, 252, 0.1)'
+    },
+    school: {
+        name: 'School',
+        primary: '#2563eb', glow: 'rgba(37, 99, 235, 0.28)', gradient: 'linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%)',
+        secondary: '#dc2626', secondaryGlow: 'rgba(220, 38, 38, 0.28)', secondaryGradient: 'linear-gradient(135deg, #dc2626 0%, #f59e0b 100%)',
+        bgGlow1: 'rgba(37, 99, 235, 0.16)', bgGlow2: 'rgba(220, 38, 38, 0.12)', bgGlow3: 'rgba(245, 158, 11, 0.08)'
+    },
+    summer: {
+        name: 'Summer',
+        primary: '#fb923c', glow: 'rgba(251, 146, 60, 0.28)', gradient: 'linear-gradient(135deg, #fb923c 0%, #facc15 100%)',
+        secondary: '#14b8a6', secondaryGlow: 'rgba(20, 184, 166, 0.28)', secondaryGradient: 'linear-gradient(135deg, #14b8a6 0%, #0ea5e9 100%)',
+        bgGlow1: 'rgba(251, 146, 60, 0.16)', bgGlow2: 'rgba(20, 184, 166, 0.16)', bgGlow3: 'rgba(250, 204, 21, 0.1)'
+    },
+    space: {
+        name: 'Space',
+        primary: '#6366f1', glow: 'rgba(99, 102, 241, 0.28)', gradient: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+        secondary: '#22d3ee', secondaryGlow: 'rgba(34, 211, 238, 0.28)', secondaryGradient: 'linear-gradient(135deg, #22d3ee 0%, #6366f1 100%)',
+        bgGlow1: 'rgba(99, 102, 241, 0.18)', bgGlow2: 'rgba(34, 211, 238, 0.12)', bgGlow3: 'rgba(236, 72, 153, 0.1)'
     }
 };
 
@@ -323,7 +341,10 @@ function renderAccentSwatches() {
 }
 
 // --- Theme Type (named full-palette presets: Default, Birthday, Halloween, Winter) ---
-const THEME_TYPE_ICONS = { default: 'palette', birthday: 'cake', halloween: 'ghost', winter: 'snowflake' };
+const THEME_TYPE_ICONS = {
+    default: 'palette', birthday: 'cake', halloween: 'ghost', winter: 'snowflake',
+    school: 'graduation-cap', summer: 'sun', space: 'rocket'
+};
 
 // Apply a Theme Type's full palette (primary/secondary/background glow) on <body>.
 // 'default' clears those overrides and falls back to the plain Accent Color instead.
@@ -395,7 +416,10 @@ const THEME_DECORATION_BUILDERS = {
     default: () => [],
     birthday: buildBirthdayDecorations,
     halloween: buildHalloweenDecorations,
-    winter: buildWinterDecorations
+    winter: buildWinterDecorations,
+    school: buildSchoolDecorations,
+    summer: buildSummerDecorations,
+    space: buildSpaceDecorations
 };
 
 function renderThemeDecorations(key) {
@@ -512,6 +536,130 @@ function buildWinterDecorations() {
             '--op': randRange(0.35, 0.9)
         }));
     }
+    return items;
+}
+
+function buildSchoolDecorations() {
+    const items = [];
+    // A gently bobbing mix of classroom supplies scattered around the page.
+    const supplies = [
+        { emoji: '📚', count: 3, size: [26, 36] },
+        { emoji: '✏️', count: 3, size: [22, 30] },
+        { emoji: '🍎', count: 3, size: [20, 28] },
+        { emoji: '📐', count: 2, size: [22, 30] },
+        { emoji: '⭐', count: 2, size: [16, 22] },
+        { emoji: '🎒', count: 2, size: [26, 34] }
+    ];
+    supplies.forEach(({ emoji, count, size }) => {
+        for (let i = 0; i < count; i++) {
+            items.push(makeDeco('deco-bob', emoji, {
+                '--x': randRange(3, 92) + 'vw',
+                '--y': randRange(6, 88) + 'vh',
+                '--size': randRange(size[0], size[1]) + 'px',
+                '--duration': randRange(4, 7) + 's',
+                '--delay': -randRange(0, 6) + 's',
+                '--drift': randRange(-20, 20) + 'px',
+                '--op': randRange(0.5, 0.8)
+            }));
+        }
+    });
+    return items;
+}
+
+function buildSummerDecorations() {
+    const items = [];
+
+    // Rising bubbles (like balloons, but plain and translucent — no hue tint).
+    for (let i = 0; i < 10; i++) {
+        items.push(makeDeco('deco-bubble', '🫧', {
+            '--x': randRange(2, 92) + 'vw',
+            '--size': randRange(16, 30) + 'px',
+            '--duration': randRange(12, 20) + 's',
+            '--delay': -randRange(0, 18) + 's',
+            '--drift': randRange(-30, 30) + 'px'
+        }));
+    }
+
+    // Seagulls gliding across the sky.
+    for (let i = 0; i < 4; i++) {
+        items.push(makeDeco('deco-flyover', '🕊️', {
+            '--y': randRange(4, 40) + 'vh',
+            '--size': randRange(16, 24) + 'px',
+            '--duration': randRange(12, 20) + 's',
+            '--delay': -randRange(0, 18) + 's',
+            '--bob': randRange(-20, 20) + 'px'
+        }));
+    }
+
+    // Sun, palm trees, beach ball, ice cream bobbing gently in place.
+    const beachItems = [
+        { emoji: '☀️', count: 1, size: [40, 48] },
+        { emoji: '🌴', count: 3, size: [30, 40] },
+        { emoji: '🏖️', count: 2, size: [26, 34] },
+        { emoji: '🍦', count: 2, size: [22, 28] }
+    ];
+    beachItems.forEach(({ emoji, count, size }) => {
+        for (let i = 0; i < count; i++) {
+            items.push(makeDeco('deco-bob', emoji, {
+                '--x': randRange(3, 92) + 'vw',
+                '--y': randRange(6, 85) + 'vh',
+                '--size': randRange(size[0], size[1]) + 'px',
+                '--duration': randRange(4, 7) + 's',
+                '--delay': -randRange(0, 6) + 's',
+                '--drift': randRange(-18, 18) + 'px',
+                '--op': randRange(0.5, 0.8)
+            }));
+        }
+    });
+
+    return items;
+}
+
+function buildSpaceDecorations() {
+    const items = [];
+
+    // A twinkling star field — small, static, just pulsing opacity/scale.
+    for (let i = 0; i < 22; i++) {
+        items.push(makeDeco('deco-twinkle', i % 4 === 0 ? '✨' : '⭐', {
+            '--x': randRange(0, 100) + 'vw',
+            '--y': randRange(0, 100) + 'vh',
+            '--size': randRange(6, 14) + 'px',
+            '--duration': randRange(2, 5) + 's',
+            '--delay': -randRange(0, 5) + 's'
+        }));
+    }
+
+    // Rockets and UFOs flying across.
+    for (let i = 0; i < 3; i++) {
+        items.push(makeDeco('deco-flyover', i % 2 === 0 ? '🚀' : '🛸', {
+            '--y': randRange(5, 70) + 'vh',
+            '--size': randRange(20, 30) + 'px',
+            '--duration': randRange(10, 18) + 's',
+            '--delay': -randRange(0, 16) + 's',
+            '--bob': randRange(-30, 30) + 'px'
+        }));
+    }
+
+    // Planets, an astronaut, and a comet bobbing/drifting in place.
+    const spaceItems = [
+        { emoji: '🪐', count: 2, size: [30, 42] },
+        { emoji: '👨‍🚀', count: 1, size: [28, 34] },
+        { emoji: '☄️', count: 1, size: [24, 30] }
+    ];
+    spaceItems.forEach(({ emoji, count, size }) => {
+        for (let i = 0; i < count; i++) {
+            items.push(makeDeco('deco-bob', emoji, {
+                '--x': randRange(5, 90) + 'vw',
+                '--y': randRange(8, 80) + 'vh',
+                '--size': randRange(size[0], size[1]) + 'px',
+                '--duration': randRange(5, 8) + 's',
+                '--delay': -randRange(0, 6) + 's',
+                '--drift': randRange(-20, 20) + 'px',
+                '--op': randRange(0.55, 0.85)
+            }));
+        }
+    });
+
     return items;
 }
 
