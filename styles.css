@@ -18,7 +18,12 @@
 
     --accent: #f43f5e;        /* Rose / Red */
     --accent-glow: rgba(244, 63, 94, 0.25);
-    
+
+    /* Background glow tint — overridden per Theme Type (Default/Birthday/Halloween/Winter) */
+    --bg-glow-1: rgba(139, 92, 246, 0.15);
+    --bg-glow-2: rgba(6, 182, 212, 0.15);
+    --bg-glow-3: rgba(217, 70, 239, 0.05);
+
     --success: #10b981;       /* Emerald */
     --warning: #f59e0b;       /* Amber */
     
@@ -58,14 +63,14 @@ body.light-theme {
     --secondary: #0891b2;
     --secondary-glow: rgba(8, 145, 178, 0.15);
     --secondary-gradient: linear-gradient(135deg, #0891b2 0%, #2563eb 100%);
-    
+
     --text-main: #111827;
     --text-muted: #4b5563;
     --text-inverse: #f9fafb;
-    
-    background-image: 
-        radial-gradient(at 0% 0%, rgba(124, 58, 237, 0.1) 0px, transparent 50%),
-        radial-gradient(at 100% 100%, rgba(8, 145, 178, 0.1) 0px, transparent 50%);
+
+    --bg-glow-1: rgba(124, 58, 237, 0.1);
+    --bg-glow-2: rgba(8, 145, 178, 0.1);
+    --bg-glow-3: rgba(217, 70, 239, 0);
 }
 
 /* Base resets & styles */
@@ -85,11 +90,11 @@ body {
     line-height: 1.5;
     transition: background-color var(--transition-normal), color var(--transition-normal);
     
-    /* Elegant Background Glow */
-    background-image: 
-        radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.15) 0px, transparent 40%),
-        radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.15) 0px, transparent 40%),
-        radial-gradient(at 50% 50%, rgba(217, 70, 239, 0.05) 0px, transparent 60%);
+    /* Elegant Background Glow — colors driven by CSS vars so Theme Type can retint them */
+    background-image:
+        radial-gradient(at 0% 0%, var(--bg-glow-1) 0px, transparent 40%),
+        radial-gradient(at 100% 100%, var(--bg-glow-2) 0px, transparent 40%),
+        radial-gradient(at 50% 50%, var(--bg-glow-3) 0px, transparent 60%);
     background-attachment: fixed;
 }
 
@@ -109,8 +114,11 @@ body {
     background: var(--text-muted);
 }
 
-/* App container */
+/* App container — its own stacking context so it always renders above the
+   fixed, click-through theme decoration layer behind it. */
 .app-container {
+    position: relative;
+    z-index: 1;
     max-width: 1300px;
     margin: 0 auto;
     display: flex;
@@ -1688,4 +1696,291 @@ body.light-theme .timer-progress {
 .timer-ring-bell {
     background: var(--warning);
     box-shadow: 0 0 30px rgba(245, 158, 11, 0.4);
+}
+
+/* ============================================================
+   SETTINGS (theme + accent color)
+   ============================================================ */
+
+/* Header "Settings" toggle button — primary/violet accent, filled when open */
+#btnToggleSettings {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+#btnToggleSettings:hover {
+    background: var(--primary-glow);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+#btnToggleSettings.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+
+/* Panel hidden until the header button reveals it */
+#settingsCard.settings-hidden {
+    display: none;
+}
+
+#settingsCard {
+    animation: slideIn 0.3s ease;
+}
+
+.settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.settings-section + .settings-section {
+    margin-top: 1.5rem;
+}
+
+.settings-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Theme picker */
+.theme-toggle-row {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.theme-option-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-family: var(--font-primary);
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 0.75rem;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.theme-option-btn:hover {
+    background: var(--bg-glass-hover);
+    border-color: var(--border-glass-focused);
+    color: var(--text-main);
+}
+
+.theme-option-btn.active {
+    background: var(--primary-gradient);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 4px 15px var(--primary-glow);
+}
+
+/* Accent color swatches */
+.accent-swatch-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+}
+
+.accent-swatch {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    padding: 0;
+    outline-offset: 2px;
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+}
+
+.accent-swatch:hover {
+    transform: scale(1.1);
+}
+
+.accent-swatch.active {
+    border-color: var(--text-main);
+    box-shadow: 0 0 0 3px var(--bg-main), 0 0 0 5px var(--text-main);
+}
+
+.accent-swatch.active i,
+.accent-swatch.active svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Disabled while a Theme Type other than Default supplies its own full palette */
+.accent-swatch-grid.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+/* Theme Type presets (Default / Birthday / Halloween / Winter, ...) */
+.theme-type-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.6rem;
+}
+
+.theme-type-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-family: var(--font-primary);
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding: 0.65rem 0.5rem;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.theme-type-btn:hover {
+    background: var(--bg-glass-hover);
+    border-color: var(--border-glass-focused);
+    color: var(--text-main);
+}
+
+.theme-type-btn.active {
+    background: var(--primary-gradient);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 4px 15px var(--primary-glow);
+}
+
+/* ============================================================
+   THEME DECORATIONS
+   Ambient, click-through decor for the active Theme Type — balloons +
+   confetti for Birthday, bats/ghosts/pumpkins/cobwebs for Halloween,
+   drifting snow for Winter. Populated by JS, driven entirely by CSS
+   transform animations (compositor-friendly, no layout thrash).
+   ============================================================ */
+
+.theme-decorations {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.deco-item {
+    position: absolute;
+    top: 0;
+    left: var(--x, 50%);
+    line-height: 1;
+    user-select: none;
+    will-change: transform;
+}
+
+/* Birthday: balloons rise from below the fold up past the top of the screen */
+.deco-balloon {
+    font-size: var(--size, 32px);
+    filter: hue-rotate(var(--hue, 0deg)) saturate(1.35);
+    opacity: 0.85;
+    animation: deco-rise var(--duration, 18s) linear var(--delay, 0s) infinite;
+}
+
+@keyframes deco-rise {
+    0%   { transform: translate(0, 115vh) rotate(-4deg); }
+    50%  { transform: translate(var(--drift, 30px), 50vh) rotate(4deg); }
+    100% { transform: translate(0, -20vh) rotate(-4deg); }
+}
+
+/* Birthday: small falling/tumbling confetti squares */
+.deco-confetti {
+    width: var(--size, 8px);
+    height: var(--size, 8px);
+    border-radius: 2px;
+    opacity: 0.9;
+    animation: deco-fall-tumble var(--duration, 8s) linear var(--delay, 0s) infinite;
+}
+
+@keyframes deco-fall-tumble {
+    0%   { transform: translate(0, -10vh) rotate(0deg); }
+    50%  { transform: translate(var(--drift, 40px), 55vh) rotate(180deg); }
+    100% { transform: translate(0, 115vh) rotate(360deg); }
+}
+
+/* Winter: snowflakes drift down with a gentle sway, no rotation */
+.deco-snowflake {
+    font-size: var(--size, 14px);
+    color: #fff;
+    opacity: var(--op, 0.7);
+    text-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
+    animation: deco-fall-sway var(--duration, 12s) linear var(--delay, 0s) infinite;
+}
+
+@keyframes deco-fall-sway {
+    0%   { transform: translate(0, -10vh); }
+    50%  { transform: translate(var(--drift, 25px), 55vh); }
+    100% { transform: translate(0, 115vh); }
+}
+
+/* Halloween: bats wing across the screen from one side to the other */
+.deco-bat {
+    top: var(--y, 20%);
+    left: -10vw;
+    font-size: var(--size, 22px);
+    opacity: 0.8;
+    animation: deco-fly-across var(--duration, 14s) linear var(--delay, 0s) infinite;
+}
+
+@keyframes deco-fly-across {
+    0%   { transform: translate(0, 0); opacity: 0; }
+    8%   { opacity: 0.8; }
+    50%  { transform: translate(60vw, var(--bob, -30px)); }
+    92%  { opacity: 0.8; }
+    100% { transform: translate(130vw, 0); opacity: 0; }
+}
+
+/* Halloween: ghosts / pumpkins gently bob in place */
+.deco-bob {
+    top: var(--y, 30%);
+    font-size: var(--size, 26px);
+    opacity: var(--op, 0.6);
+    animation: deco-bob var(--duration, 5s) ease-in-out var(--delay, 0s) infinite alternate;
+}
+
+@keyframes deco-bob {
+    0%   { transform: translate(0, 0); }
+    100% { transform: translate(var(--drift, 18px), -22px); }
+}
+
+/* Halloween: static cobwebs tucked into the top corners */
+.deco-cobweb {
+    top: -1.5rem;
+    left: -1.5rem;
+    font-size: var(--size, 100px);
+    opacity: 0.25;
+    filter: grayscale(1);
+}
+
+.deco-cobweb.deco-cobweb-right {
+    left: auto;
+    right: -1.5rem;
+    transform: scaleX(-1);
+}
+
+/* Respect reduced-motion preferences — decorations are purely ambient */
+@media (prefers-reduced-motion: reduce) {
+    .theme-decorations {
+        display: none;
+    }
 }

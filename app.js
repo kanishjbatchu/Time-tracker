@@ -5,7 +5,47 @@ let state = {
     activities: [],
     logs: [],
     alarms: [],
-    theme: 'dark'
+    theme: 'dark',
+    accentColor: 'violet',
+    specialTheme: 'default'
+};
+
+// Accent color presets — each overrides --primary / --primary-glow / --primary-gradient
+// via inline styles on <body>, so a chosen accent looks the same in dark or light theme.
+// Only meaningful while specialTheme === 'default'; a named Theme Type below replaces
+// the whole palette instead.
+const ACCENTS = {
+    violet:  { name: 'Violet',  primary: '#8b5cf6', glow: 'rgba(139, 92, 246, 0.25)', gradient: 'linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%)' },
+    cyan:    { name: 'Cyan',    primary: '#06b6d4', glow: 'rgba(6, 182, 212, 0.25)',  gradient: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)' },
+    emerald: { name: 'Emerald', primary: '#10b981', glow: 'rgba(16, 185, 129, 0.25)', gradient: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)' },
+    rose:    { name: 'Rose',    primary: '#f43f5e', glow: 'rgba(244, 63, 94, 0.25)',  gradient: 'linear-gradient(135deg, #f43f5e 0%, #fb7185 100%)' },
+    amber:   { name: 'Amber',   primary: '#f59e0b', glow: 'rgba(245, 158, 11, 0.25)', gradient: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)' },
+    blue:    { name: 'Blue',    primary: '#3b82f6', glow: 'rgba(59, 130, 246, 0.25)', gradient: 'linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%)' }
+};
+
+// Named "Theme Type" presets — each is a full festive palette (primary + secondary +
+// background glow tint) applied on top of whichever base Dark/Light mode is active.
+// Picking one overrides the plain Accent Color choice; picking 'default' restores it.
+const THEME_TYPES = {
+    default: { name: 'Default' },
+    birthday: {
+        name: 'Birthday',
+        primary: '#ec4899', glow: 'rgba(236, 72, 153, 0.28)', gradient: 'linear-gradient(135deg, #ec4899 0%, #facc15 100%)',
+        secondary: '#8b5cf6', secondaryGlow: 'rgba(139, 92, 246, 0.28)', secondaryGradient: 'linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%)',
+        bgGlow1: 'rgba(236, 72, 153, 0.18)', bgGlow2: 'rgba(250, 204, 21, 0.15)', bgGlow3: 'rgba(139, 92, 246, 0.12)'
+    },
+    halloween: {
+        name: 'Halloween',
+        primary: '#f97316', glow: 'rgba(249, 115, 22, 0.28)', gradient: 'linear-gradient(135deg, #f97316 0%, #7c3aed 100%)',
+        secondary: '#7c3aed', secondaryGlow: 'rgba(124, 58, 237, 0.28)', secondaryGradient: 'linear-gradient(135deg, #7c3aed 0%, #4c1d95 100%)',
+        bgGlow1: 'rgba(249, 115, 22, 0.16)', bgGlow2: 'rgba(124, 58, 237, 0.16)', bgGlow3: 'rgba(16, 185, 129, 0.06)'
+    },
+    winter: {
+        name: 'Winter',
+        primary: '#0ea5e9', glow: 'rgba(14, 165, 233, 0.28)', gradient: 'linear-gradient(135deg, #0ea5e9 0%, #a5f3fc 100%)',
+        secondary: '#6366f1', secondaryGlow: 'rgba(99, 102, 241, 0.28)', secondaryGradient: 'linear-gradient(135deg, #6366f1 0%, #38bdf8 100%)',
+        bgGlow1: 'rgba(14, 165, 233, 0.16)', bgGlow2: 'rgba(99, 102, 241, 0.14)', bgGlow3: 'rgba(165, 243, 252, 0.1)'
+    }
 };
 
 // --- Timer (countdown) state — session-only, not persisted ---
@@ -38,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadState();
     setupEventListeners();
     initTheme();
+    initThemeType();
     populateRingtoneOptions();
     setDefaultAlarmDateTime();
     prepareRingtones(); // render ringtone WAVs up front so alarms can ring instantly
@@ -62,10 +103,6 @@ function setupEventListeners() {
         categorySelect.value = '';
     });
 
-    // Theme Toggle
-    const themeBtn = document.getElementById('themeToggle');
-    themeBtn.addEventListener('click', toggleTheme);
-
     // JSON Save (full backup) + Upload (restore)
     const btnSave = document.getElementById('btnSave');
     btnSave.addEventListener('click', exportJSON);
@@ -82,6 +119,10 @@ function setupEventListeners() {
     // Reset Logs Only
     const btnClearLogs = document.getElementById('btnClearLogs');
     btnClearLogs.addEventListener('click', resetLogsOnly);
+
+    // Settings: header button toggles the settings panel
+    const btnToggleSettings = document.getElementById('btnToggleSettings');
+    if (btnToggleSettings) btnToggleSettings.addEventListener('click', toggleSettingsPanel);
 
     // Alarm: header button toggles the alarm customization panel
     const btnToggleAlarm = document.getElementById('btnToggleAlarm');
@@ -156,6 +197,8 @@ function loadState() {
             if (!state.activities) state.activities = [];
             if (!state.logs) state.logs = [];
             if (!state.theme) state.theme = 'dark';
+            if (!state.accentColor || !ACCENTS[state.accentColor]) state.accentColor = 'violet';
+            if (!state.specialTheme || !THEME_TYPES[state.specialTheme]) state.specialTheme = 'default';
             delete state.notes; // drop any leftover data from the removed notepad
             // Alarms are session-only: they are created via the "Set Alarm" button
             // and never restored from storage, so none "load" on page load.
@@ -190,24 +233,286 @@ function saveState() {
 // Theme handling
 function initTheme() {
     const body = document.body;
-    const themeIcon = document.querySelector('#themeToggle i');
     if (state.theme === 'light') {
         body.classList.remove('dark-theme');
         body.classList.add('light-theme');
-        if (themeIcon) themeIcon.setAttribute('data-lucide', 'moon');
     } else {
         body.classList.remove('light-theme');
         body.classList.add('dark-theme');
-        if (themeIcon) themeIcon.setAttribute('data-lucide', 'sun');
     }
+
+    const darkBtn = document.getElementById('themeOptionDark');
+    const lightBtn = document.getElementById('themeOptionLight');
+    if (darkBtn) darkBtn.classList.toggle('active', state.theme === 'dark');
+    if (lightBtn) lightBtn.classList.toggle('active', state.theme === 'light');
+
     lucide.createIcons();
 }
 
-function toggleTheme() {
-    state.theme = state.theme === 'dark' ? 'light' : 'dark';
+// Set the theme (used by the Dark/Light buttons in the Settings panel).
+function setTheme(theme) {
+    if (theme !== 'dark' && theme !== 'light') return;
+    if (state.theme === theme) return;
+    state.theme = theme;
     saveState();
     initTheme();
     showToast(`Switched to ${state.theme} theme`, 'info');
+}
+
+// --- Settings panel (theme + accent color) ---
+function toggleSettingsPanel() {
+    const card = document.getElementById('settingsCard');
+    const btn = document.getElementById('btnToggleSettings');
+    if (!card) return;
+
+    const willShow = card.classList.contains('settings-hidden');
+    card.classList.toggle('settings-hidden', !willShow);
+    if (btn) btn.classList.toggle('active', willShow);
+
+    if (willShow) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+// Apply an accent color by overriding the CSS custom properties on <body> —
+// inline styles win over both the :root defaults and the .light-theme class,
+// so one accent definition works in either theme.
+function applyAccentColor(key) {
+    if (!ACCENTS[key]) key = 'violet';
+    const acc = ACCENTS[key];
+    const body = document.body;
+    body.style.setProperty('--primary', acc.primary);
+    body.style.setProperty('--primary-glow', acc.glow);
+    body.style.setProperty('--primary-gradient', acc.gradient);
+    state.accentColor = key;
+}
+
+// Picking a plain accent color always drops back to the "Default" theme type —
+// a named theme (Birthday, etc.) owns the whole palette, so the two don't mix.
+function setAccentColor(key) {
+    if (!ACCENTS[key]) return;
+    state.accentColor = key;
+    applySpecialTheme('default');
+    saveState();
+    renderThemeTypeButtons();
+    renderAccentSwatches();
+    showToast(`Accent color set to ${ACCENTS[key].name}`, 'info');
+}
+
+function renderAccentSwatches() {
+    const grid = document.getElementById('accentSwatchGrid');
+    if (!grid) return;
+    grid.classList.toggle('disabled', state.specialTheme !== 'default');
+    grid.innerHTML = '';
+    Object.keys(ACCENTS).forEach(key => {
+        const acc = ACCENTS[key];
+        const isActive = key === state.accentColor && state.specialTheme === 'default';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `accent-swatch${isActive ? ' active' : ''}`;
+        btn.style.background = acc.gradient;
+        btn.title = acc.name;
+        btn.setAttribute('aria-label', `${acc.name} accent color`);
+        btn.onclick = () => setAccentColor(key);
+        if (isActive) {
+            btn.innerHTML = '<i data-lucide="check"></i>';
+        }
+        grid.appendChild(btn);
+    });
+    lucide.createIcons();
+}
+
+// --- Theme Type (named full-palette presets: Default, Birthday, Halloween, Winter) ---
+const THEME_TYPE_ICONS = { default: 'palette', birthday: 'cake', halloween: 'ghost', winter: 'snowflake' };
+
+// Apply a Theme Type's full palette (primary/secondary/background glow) on <body>.
+// 'default' clears those overrides and falls back to the plain Accent Color instead.
+function applySpecialTheme(key) {
+    if (!THEME_TYPES[key]) key = 'default';
+    const body = document.body;
+
+    if (key === 'default') {
+        body.style.removeProperty('--secondary');
+        body.style.removeProperty('--secondary-glow');
+        body.style.removeProperty('--secondary-gradient');
+        body.style.removeProperty('--bg-glow-1');
+        body.style.removeProperty('--bg-glow-2');
+        body.style.removeProperty('--bg-glow-3');
+        applyAccentColor(state.accentColor);
+    } else {
+        const t = THEME_TYPES[key];
+        body.style.setProperty('--primary', t.primary);
+        body.style.setProperty('--primary-glow', t.glow);
+        body.style.setProperty('--primary-gradient', t.gradient);
+        body.style.setProperty('--secondary', t.secondary);
+        body.style.setProperty('--secondary-glow', t.secondaryGlow);
+        body.style.setProperty('--secondary-gradient', t.secondaryGradient);
+        body.style.setProperty('--bg-glow-1', t.bgGlow1);
+        body.style.setProperty('--bg-glow-2', t.bgGlow2);
+        body.style.setProperty('--bg-glow-3', t.bgGlow3);
+    }
+
+    state.specialTheme = key;
+    renderThemeDecorations(key);
+}
+
+function setSpecialTheme(key) {
+    if (!THEME_TYPES[key]) return;
+    applySpecialTheme(key);
+    saveState();
+    renderThemeTypeButtons();
+    renderAccentSwatches();
+    showToast(`Theme set to ${THEME_TYPES[key].name}`, 'info');
+}
+
+function initThemeType() {
+    applySpecialTheme(state.specialTheme);
+    renderThemeTypeButtons();
+    renderAccentSwatches();
+}
+
+function renderThemeTypeButtons() {
+    const grid = document.getElementById('themeTypeGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    Object.keys(THEME_TYPES).forEach(key => {
+        const t = THEME_TYPES[key];
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `theme-type-btn${key === state.specialTheme ? ' active' : ''}`;
+        btn.innerHTML = `<i data-lucide="${THEME_TYPE_ICONS[key] || 'sparkles'}"></i><span>${t.name}</span>`;
+        btn.onclick = () => setSpecialTheme(key);
+        grid.appendChild(btn);
+    });
+    lucide.createIcons();
+}
+
+// --- Theme decorations (ambient, click-through) ---
+// One builder per Theme Type; each returns an array of DOM elements to drop
+// into #themeDecorations. Purely cosmetic — the container has pointer-events:
+// none, so nothing here ever blocks a click.
+const THEME_DECORATION_BUILDERS = {
+    default: () => [],
+    birthday: buildBirthdayDecorations,
+    halloween: buildHalloweenDecorations,
+    winter: buildWinterDecorations
+};
+
+function renderThemeDecorations(key) {
+    const container = document.getElementById('themeDecorations');
+    if (!container) return;
+    container.innerHTML = '';
+    const build = THEME_DECORATION_BUILDERS[key] || THEME_DECORATION_BUILDERS.default;
+    build().forEach(el => container.appendChild(el));
+}
+
+function randRange(min, max) {
+    return min + Math.random() * (max - min);
+}
+
+// A plain emoji/text decoration, positioned + timed via CSS custom properties
+// so the shared keyframes (deco-rise, deco-fall-sway, ...) can read them.
+function makeDeco(className, content, vars) {
+    const el = document.createElement('span');
+    el.className = `deco-item ${className}`;
+    el.textContent = content;
+    el.setAttribute('aria-hidden', 'true');
+    Object.keys(vars || {}).forEach(k => el.style.setProperty(k, vars[k]));
+    return el;
+}
+
+function buildBirthdayDecorations() {
+    const items = [];
+
+    // Rising balloons — hue-rotate gives each one a different color from one emoji.
+    const balloonHues = [0, 45, 90, 160, 200, 260, 300, 330];
+    for (let i = 0; i < 8; i++) {
+        items.push(makeDeco('deco-balloon', '🎈', {
+            '--x': randRange(2, 92) + 'vw',
+            '--size': randRange(28, 46) + 'px',
+            '--duration': randRange(16, 26) + 's',
+            '--delay': -randRange(0, 24) + 's', // negative delay: already mid-flight on load
+            '--drift': randRange(-40, 40) + 'px',
+            '--hue': balloonHues[i % balloonHues.length] + 'deg'
+        }));
+    }
+
+    // Falling, tumbling confetti squares.
+    const confettiColors = ['#f43f5e', '#f59e0b', '#10b981', '#8b5cf6', '#06b6d4', '#ec4899'];
+    for (let i = 0; i < 18; i++) {
+        const el = makeDeco('deco-confetti', '', {
+            '--x': randRange(0, 100) + 'vw',
+            '--size': randRange(6, 11) + 'px',
+            '--duration': randRange(6, 12) + 's',
+            '--delay': -randRange(0, 12) + 's',
+            '--drift': randRange(-60, 60) + 'px'
+        });
+        el.style.background = confettiColors[i % confettiColors.length];
+        items.push(el);
+    }
+
+    return items;
+}
+
+function buildHalloweenDecorations() {
+    const items = [];
+
+    // Static cobwebs tucked into the top corners.
+    items.push(makeDeco('deco-cobweb', '🕸️', { '--size': randRange(90, 120) + 'px' }));
+    items.push(makeDeco('deco-cobweb deco-cobweb-right', '🕸️', { '--size': randRange(90, 120) + 'px' }));
+
+    // Bats winging across the screen at different heights/speeds.
+    for (let i = 0; i < 6; i++) {
+        items.push(makeDeco('deco-bat', '🦇', {
+            '--y': randRange(5, 70) + 'vh',
+            '--size': randRange(18, 28) + 'px',
+            '--duration': randRange(10, 18) + 's',
+            '--delay': -randRange(0, 18) + 's',
+            '--bob': randRange(-40, 40) + 'px'
+        }));
+    }
+
+    // Ghosts and pumpkins bobbing gently in place.
+    for (let i = 0; i < 4; i++) {
+        items.push(makeDeco('deco-bob', '👻', {
+            '--x': randRange(5, 90) + 'vw',
+            '--y': randRange(8, 75) + 'vh',
+            '--size': randRange(24, 34) + 'px',
+            '--duration': randRange(4, 7) + 's',
+            '--delay': -randRange(0, 6) + 's',
+            '--drift': randRange(-20, 20) + 'px',
+            '--op': randRange(0.45, 0.7)
+        }));
+    }
+    for (let i = 0; i < 3; i++) {
+        items.push(makeDeco('deco-bob', '🎃', {
+            '--x': randRange(5, 90) + 'vw',
+            '--y': randRange(60, 90) + 'vh',
+            '--size': randRange(26, 36) + 'px',
+            '--duration': randRange(4, 7) + 's',
+            '--delay': -randRange(0, 6) + 's',
+            '--drift': randRange(-15, 15) + 'px',
+            '--op': randRange(0.55, 0.8)
+        }));
+    }
+
+    return items;
+}
+
+function buildWinterDecorations() {
+    const items = [];
+    const flakes = ['❄', '❅', '❆'];
+    for (let i = 0; i < 26; i++) {
+        items.push(makeDeco('deco-snowflake', flakes[i % flakes.length], {
+            '--x': randRange(0, 100) + 'vw',
+            '--size': randRange(8, 22) + 'px',
+            '--duration': randRange(8, 18) + 's',
+            '--delay': -randRange(0, 18) + 's',
+            '--drift': randRange(-30, 30) + 'px',
+            '--op': randRange(0.35, 0.9)
+        }));
+    }
+    return items;
 }
 
 // Activity logic
@@ -799,7 +1104,9 @@ function exportJSON() {
         exportedAt: new Date().toISOString(),
         activities: state.activities,
         logs: state.logs,
-        theme: state.theme
+        theme: state.theme,
+        accentColor: state.accentColor,
+        specialTheme: state.specialTheme
     };
 
     const json = JSON.stringify(backup, null, 2);
@@ -845,6 +1152,8 @@ function handleJSONImport(event) {
                 state.activities = importedData.activities;
                 state.logs = importedData.logs;
                 if (importedData.theme) state.theme = importedData.theme;
+                if (importedData.accentColor && ACCENTS[importedData.accentColor]) state.accentColor = importedData.accentColor;
+                if (importedData.specialTheme && THEME_TYPES[importedData.specialTheme]) state.specialTheme = importedData.specialTheme;
 
                 // If a timer was running when the backup was saved, fold the
                 // elapsed offline time into its total and restart the clock now.
@@ -859,6 +1168,9 @@ function handleJSONImport(event) {
 
                 saveState();
                 initTheme();
+                applySpecialTheme(state.specialTheme);
+                renderThemeTypeButtons();
+                renderAccentSwatches();
                 renderAll();
                 showToast('Data uploaded successfully!', 'success');
             } else {
