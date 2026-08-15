@@ -63,6 +63,44 @@ const THEME_TYPES = {
         primary: '#6366f1', glow: 'rgba(99, 102, 241, 0.28)', gradient: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
         secondary: '#22d3ee', secondaryGlow: 'rgba(34, 211, 238, 0.28)', secondaryGradient: 'linear-gradient(135deg, #22d3ee 0%, #6366f1 100%)',
         bgGlow1: 'rgba(99, 102, 241, 0.18)', bgGlow2: 'rgba(34, 211, 238, 0.12)', bgGlow3: 'rgba(236, 72, 153, 0.1)'
+    },
+    // --- Season-based ---
+    spring: {
+        name: 'Spring',
+        primary: '#22c55e', glow: 'rgba(34, 197, 94, 0.28)', gradient: 'linear-gradient(135deg, #22c55e 0%, #facc15 100%)',
+        secondary: '#f472b6', secondaryGlow: 'rgba(244, 114, 182, 0.28)', secondaryGradient: 'linear-gradient(135deg, #f472b6 0%, #fb7185 100%)',
+        bgGlow1: 'rgba(34, 197, 94, 0.16)', bgGlow2: 'rgba(244, 114, 182, 0.14)', bgGlow3: 'rgba(250, 204, 21, 0.08)'
+    },
+    autumn: {
+        name: 'Autumn',
+        primary: '#d97706', glow: 'rgba(217, 119, 6, 0.28)', gradient: 'linear-gradient(135deg, #d97706 0%, #b91c1c 100%)',
+        secondary: '#92400e', secondaryGlow: 'rgba(146, 64, 14, 0.28)', secondaryGradient: 'linear-gradient(135deg, #92400e 0%, #78350f 100%)',
+        bgGlow1: 'rgba(217, 119, 6, 0.16)', bgGlow2: 'rgba(146, 64, 14, 0.14)', bgGlow3: 'rgba(185, 28, 28, 0.08)'
+    },
+    // --- Subject-based ---
+    math: {
+        name: 'Math',
+        primary: '#4f46e5', glow: 'rgba(79, 70, 229, 0.28)', gradient: 'linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)',
+        secondary: '#f59e0b', secondaryGlow: 'rgba(245, 158, 11, 0.28)', secondaryGradient: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)',
+        bgGlow1: 'rgba(79, 70, 229, 0.16)', bgGlow2: 'rgba(245, 158, 11, 0.12)', bgGlow3: 'rgba(6, 182, 212, 0.08)'
+    },
+    science: {
+        name: 'Science',
+        primary: '#0d9488', glow: 'rgba(13, 148, 136, 0.28)', gradient: 'linear-gradient(135deg, #0d9488 0%, #22d3ee 100%)',
+        secondary: '#a855f7', secondaryGlow: 'rgba(168, 85, 247, 0.28)', secondaryGradient: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
+        bgGlow1: 'rgba(13, 148, 136, 0.16)', bgGlow2: 'rgba(168, 85, 247, 0.14)', bgGlow3: 'rgba(34, 211, 238, 0.08)'
+    },
+    art: {
+        name: 'Art',
+        primary: '#d946ef', glow: 'rgba(217, 70, 239, 0.28)', gradient: 'linear-gradient(135deg, #d946ef 0%, #f59e0b 100%)',
+        secondary: '#06b6d4', secondaryGlow: 'rgba(6, 182, 212, 0.28)', secondaryGradient: 'linear-gradient(135deg, #06b6d4 0%, #22c55e 100%)',
+        bgGlow1: 'rgba(217, 70, 239, 0.16)', bgGlow2: 'rgba(6, 182, 212, 0.14)', bgGlow3: 'rgba(245, 158, 11, 0.1)'
+    },
+    music: {
+        name: 'Music',
+        primary: '#a855f7', glow: 'rgba(168, 85, 247, 0.28)', gradient: 'linear-gradient(135deg, #a855f7 0%, #ec4899 100%)',
+        secondary: '#f59e0b', secondaryGlow: 'rgba(245, 158, 11, 0.28)', secondaryGradient: 'linear-gradient(135deg, #f59e0b 0%, #a855f7 100%)',
+        bgGlow1: 'rgba(168, 85, 247, 0.18)', bgGlow2: 'rgba(236, 72, 153, 0.14)', bgGlow3: 'rgba(245, 158, 11, 0.08)'
     }
 };
 
@@ -138,9 +176,20 @@ function setupEventListeners() {
     const btnClearLogs = document.getElementById('btnClearLogs');
     btnClearLogs.addEventListener('click', resetLogsOnly);
 
-    // Settings: header button toggles the settings panel
+    // Settings: header button opens the settings modal; the X button and
+    // clicking the dimmed backdrop both close it.
     const btnToggleSettings = document.getElementById('btnToggleSettings');
     if (btnToggleSettings) btnToggleSettings.addEventListener('click', toggleSettingsPanel);
+
+    const settingsClose = document.getElementById('settingsClose');
+    if (settingsClose) settingsClose.addEventListener('click', closeSettingsPanel);
+
+    const settingsOverlay = document.getElementById('settingsOverlay');
+    if (settingsOverlay) {
+        settingsOverlay.addEventListener('click', (e) => {
+            if (e.target.id === 'settingsOverlay') closeSettingsPanel(); // click backdrop to close
+        });
+    }
 
     // Alarm: header button toggles the alarm customization panel
     const btnToggleAlarm = document.getElementById('btnToggleAlarm');
@@ -189,8 +238,11 @@ function setupEventListeners() {
         if (e.target.id === 'editModal') closeEditModal(); // click backdrop to close
     });
     document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
         const modal = document.getElementById('editModal');
-        if (e.key === 'Escape' && modal.classList.contains('active')) closeEditModal();
+        if (modal.classList.contains('active')) closeEditModal();
+        const settingsOverlay = document.getElementById('settingsOverlay');
+        if (settingsOverlay && settingsOverlay.classList.contains('active')) closeSettingsPanel();
     });
 
     // Unlock the Web Audio context on the first user gesture so alarms can play later
@@ -277,19 +329,33 @@ function setTheme(theme) {
     showToast(`Switched to ${state.theme} theme`, 'info');
 }
 
-// --- Settings panel (theme + accent color) ---
+// --- Settings modal (theme + theme type + accent color) ---
 function toggleSettingsPanel() {
-    const card = document.getElementById('settingsCard');
-    const btn = document.getElementById('btnToggleSettings');
-    if (!card) return;
-
-    const willShow = card.classList.contains('settings-hidden');
-    card.classList.toggle('settings-hidden', !willShow);
-    if (btn) btn.classList.toggle('active', willShow);
-
-    if (willShow) {
-        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const overlay = document.getElementById('settingsOverlay');
+    if (!overlay) return;
+    if (overlay.classList.contains('active')) {
+        closeSettingsPanel();
+    } else {
+        openSettingsPanel();
     }
+}
+
+function openSettingsPanel() {
+    const overlay = document.getElementById('settingsOverlay');
+    const btn = document.getElementById('btnToggleSettings');
+    if (!overlay) return;
+    overlay.classList.add('active');
+    overlay.setAttribute('aria-hidden', 'false');
+    if (btn) btn.classList.add('active');
+}
+
+function closeSettingsPanel() {
+    const overlay = document.getElementById('settingsOverlay');
+    const btn = document.getElementById('btnToggleSettings');
+    if (!overlay) return;
+    overlay.classList.remove('active');
+    overlay.setAttribute('aria-hidden', 'true');
+    if (btn) btn.classList.remove('active');
 }
 
 // Apply an accent color by overriding the CSS custom properties on <body> —
@@ -340,10 +406,12 @@ function renderAccentSwatches() {
     lucide.createIcons();
 }
 
-// --- Theme Type (named full-palette presets: Default, Birthday, Halloween, Winter) ---
+// --- Theme Type (named full-palette presets — see THEME_TYPES above for the full list) ---
 const THEME_TYPE_ICONS = {
     default: 'palette', birthday: 'cake', halloween: 'ghost', winter: 'snowflake',
-    school: 'graduation-cap', summer: 'sun', space: 'rocket'
+    school: 'graduation-cap', summer: 'sun', space: 'rocket',
+    spring: 'flower-2', autumn: 'leaf',
+    math: 'calculator', science: 'flask-conical', art: 'paintbrush', music: 'music'
 };
 
 // Apply a Theme Type's full palette (primary/secondary/background glow) on <body>.
@@ -419,7 +487,13 @@ const THEME_DECORATION_BUILDERS = {
     winter: buildWinterDecorations,
     school: buildSchoolDecorations,
     summer: buildSummerDecorations,
-    space: buildSpaceDecorations
+    space: buildSpaceDecorations,
+    spring: buildSpringDecorations,
+    autumn: buildAutumnDecorations,
+    math: buildMathDecorations,
+    science: buildScienceDecorations,
+    art: buildArtDecorations,
+    music: buildMusicDecorations
 };
 
 function renderThemeDecorations(key) {
@@ -540,30 +614,15 @@ function buildWinterDecorations() {
 }
 
 function buildSchoolDecorations() {
-    const items = [];
     // A gently bobbing mix of classroom supplies scattered around the page.
-    const supplies = [
+    return makeBobCluster([
         { emoji: '📚', count: 3, size: [26, 36] },
         { emoji: '✏️', count: 3, size: [22, 30] },
         { emoji: '🍎', count: 3, size: [20, 28] },
         { emoji: '📐', count: 2, size: [22, 30] },
         { emoji: '⭐', count: 2, size: [16, 22] },
         { emoji: '🎒', count: 2, size: [26, 34] }
-    ];
-    supplies.forEach(({ emoji, count, size }) => {
-        for (let i = 0; i < count; i++) {
-            items.push(makeDeco('deco-bob', emoji, {
-                '--x': randRange(3, 92) + 'vw',
-                '--y': randRange(6, 88) + 'vh',
-                '--size': randRange(size[0], size[1]) + 'px',
-                '--duration': randRange(4, 7) + 's',
-                '--delay': -randRange(0, 6) + 's',
-                '--drift': randRange(-20, 20) + 'px',
-                '--op': randRange(0.5, 0.8)
-            }));
-        }
-    });
-    return items;
+    ]);
 }
 
 function buildSummerDecorations() {
@@ -592,25 +651,12 @@ function buildSummerDecorations() {
     }
 
     // Sun, palm trees, beach ball, ice cream bobbing gently in place.
-    const beachItems = [
+    items.push(...makeBobCluster([
         { emoji: '☀️', count: 1, size: [40, 48] },
         { emoji: '🌴', count: 3, size: [30, 40] },
         { emoji: '🏖️', count: 2, size: [26, 34] },
         { emoji: '🍦', count: 2, size: [22, 28] }
-    ];
-    beachItems.forEach(({ emoji, count, size }) => {
-        for (let i = 0; i < count; i++) {
-            items.push(makeDeco('deco-bob', emoji, {
-                '--x': randRange(3, 92) + 'vw',
-                '--y': randRange(6, 85) + 'vh',
-                '--size': randRange(size[0], size[1]) + 'px',
-                '--duration': randRange(4, 7) + 's',
-                '--delay': -randRange(0, 6) + 's',
-                '--drift': randRange(-18, 18) + 'px',
-                '--op': randRange(0.5, 0.8)
-            }));
-        }
-    });
+    ]));
 
     return items;
 }
@@ -641,24 +687,211 @@ function buildSpaceDecorations() {
     }
 
     // Planets, an astronaut, and a comet bobbing/drifting in place.
-    const spaceItems = [
+    items.push(...makeBobCluster([
         { emoji: '🪐', count: 2, size: [30, 42] },
         { emoji: '👨‍🚀', count: 1, size: [28, 34] },
         { emoji: '☄️', count: 1, size: [24, 30] }
-    ];
-    spaceItems.forEach(({ emoji, count, size }) => {
+    ]));
+
+    return items;
+}
+
+// Helper: several bobbing-in-place items of different emoji, counts, and size ranges.
+function makeBobCluster(specs) {
+    const items = [];
+    specs.forEach(({ emoji, count, size }) => {
         for (let i = 0; i < count; i++) {
             items.push(makeDeco('deco-bob', emoji, {
-                '--x': randRange(5, 90) + 'vw',
-                '--y': randRange(8, 80) + 'vh',
+                '--x': randRange(3, 92) + 'vw',
+                '--y': randRange(6, 88) + 'vh',
                 '--size': randRange(size[0], size[1]) + 'px',
-                '--duration': randRange(5, 8) + 's',
+                '--duration': randRange(4, 7) + 's',
                 '--delay': -randRange(0, 6) + 's',
                 '--drift': randRange(-20, 20) + 'px',
-                '--op': randRange(0.55, 0.85)
+                '--op': randRange(0.5, 0.8)
             }));
         }
     });
+    return items;
+}
+
+function buildSpringDecorations() {
+    const items = [];
+
+    // Butterflies flitting across the screen.
+    for (let i = 0; i < 4; i++) {
+        items.push(makeDeco('deco-flyover', '🦋', {
+            '--y': randRange(5, 65) + 'vh',
+            '--size': randRange(16, 24) + 'px',
+            '--duration': randRange(11, 18) + 's',
+            '--delay': -randRange(0, 16) + 's',
+            '--bob': randRange(-35, 35) + 'px'
+        }));
+    }
+
+    // Falling flower petals, gently swaying down.
+    const petals = ['🌸', '🌺'];
+    for (let i = 0; i < 14; i++) {
+        items.push(makeDeco('deco-fall-item', petals[i % petals.length], {
+            '--x': randRange(0, 100) + 'vw',
+            '--size': randRange(10, 18) + 'px',
+            '--duration': randRange(9, 16) + 's',
+            '--delay': -randRange(0, 16) + 's',
+            '--drift': randRange(-30, 30) + 'px',
+            '--op': randRange(0.6, 0.95)
+        }));
+    }
+
+    // Blooms and a bee bobbing in place.
+    items.push(...makeBobCluster([
+        { emoji: '🌷', count: 3, size: [22, 30] },
+        { emoji: '🌼', count: 2, size: [20, 28] },
+        { emoji: '🐝', count: 2, size: [16, 22] }
+    ]));
+
+    return items;
+}
+
+function buildAutumnDecorations() {
+    const items = [];
+
+    // Falling leaves, tumbling as they drift down.
+    const leaves = ['🍁', '🍂', '🍃'];
+    for (let i = 0; i < 16; i++) {
+        items.push(makeDeco('deco-tumble-item', leaves[i % leaves.length], {
+            '--x': randRange(0, 100) + 'vw',
+            '--size': randRange(14, 24) + 'px',
+            '--duration': randRange(7, 13) + 's',
+            '--delay': -randRange(0, 13) + 's',
+            '--drift': randRange(-45, 45) + 'px',
+            '--op': randRange(0.65, 0.95)
+        }));
+    }
+
+    // Acorns, a mushroom, and a hedgehog bobbing in the underbrush.
+    items.push(...makeBobCluster([
+        { emoji: '🌰', count: 3, size: [18, 24] },
+        { emoji: '🍄', count: 3, size: [20, 28] },
+        { emoji: '🦔', count: 1, size: [26, 32] }
+    ]));
+
+    return items;
+}
+
+function buildMathDecorations() {
+    const items = [];
+
+    // Falling numbers and symbols, drifting gently down. Plain text (unlike
+    // emoji) renders in the CSS text color, so set one explicitly for contrast.
+    const falling = ['1', '2', 'π', '∑', '7', '∞', '9', '+'];
+    for (let i = 0; i < 8; i++) {
+        const el = makeDeco('deco-fall-item', falling[i % falling.length], {
+            '--x': randRange(0, 100) + 'vw',
+            '--size': randRange(14, 22) + 'px',
+            '--duration': randRange(10, 17) + 's',
+            '--delay': -randRange(0, 17) + 's',
+            '--drift': randRange(-25, 25) + 'px',
+            '--op': randRange(0.4, 0.7)
+        });
+        el.style.color = '#fff';
+        el.style.fontWeight = '700';
+        items.push(el);
+    }
+
+    // Operators, tools, and symbols bobbing around the page.
+    items.push(...makeBobCluster([
+        { emoji: '➕', count: 2, size: [20, 26] },
+        { emoji: '➖', count: 2, size: [20, 26] },
+        { emoji: '✖️', count: 2, size: [20, 26] },
+        { emoji: '🔢', count: 3, size: [22, 30] },
+        { emoji: '📐', count: 2, size: [22, 30] },
+        { emoji: '📏', count: 2, size: [22, 30] },
+        { emoji: '🧮', count: 2, size: [24, 32] }
+    ]));
+
+    return items;
+}
+
+function buildScienceDecorations() {
+    const items = [];
+
+    // Bubbles rising, as if from a bubbling flask.
+    for (let i = 0; i < 8; i++) {
+        items.push(makeDeco('deco-bubble', '🫧', {
+            '--x': randRange(2, 92) + 'vw',
+            '--size': randRange(14, 26) + 'px',
+            '--duration': randRange(10, 18) + 's',
+            '--delay': -randRange(0, 16) + 's',
+            '--drift': randRange(-25, 25) + 'px'
+        }));
+    }
+
+    // Lab equipment and specimens bobbing around the page.
+    items.push(...makeBobCluster([
+        { emoji: '🧪', count: 3, size: [22, 30] },
+        { emoji: '⚗️', count: 2, size: [24, 32] },
+        { emoji: '🔬', count: 2, size: [24, 32] },
+        { emoji: '🧬', count: 3, size: [22, 30] },
+        { emoji: '⚛️', count: 2, size: [20, 28] },
+        { emoji: '🔭', count: 2, size: [24, 32] }
+    ]));
+
+    return items;
+}
+
+function buildArtDecorations() {
+    const items = [];
+
+    // Tumbling, colorful paint-splatter squares (reuses the confetti animation).
+    const paintColors = ['#d946ef', '#f59e0b', '#06b6d4', '#22c55e', '#f43f5e', '#a855f7'];
+    for (let i = 0; i < 16; i++) {
+        const el = makeDeco('deco-confetti', '', {
+            '--x': randRange(0, 100) + 'vw',
+            '--size': randRange(7, 12) + 'px',
+            '--duration': randRange(6, 12) + 's',
+            '--delay': -randRange(0, 12) + 's',
+            '--drift': randRange(-60, 60) + 'px'
+        });
+        el.style.background = paintColors[i % paintColors.length];
+        el.style.borderRadius = '50%'; // paint droplets read better round than square
+        items.push(el);
+    }
+
+    // Palette, brush, rainbow, sparkles, and a framed picture bobbing in place.
+    items.push(...makeBobCluster([
+        { emoji: '🎨', count: 2, size: [26, 34] },
+        { emoji: '🖌️', count: 2, size: [22, 28] },
+        { emoji: '🌈', count: 2, size: [26, 34] },
+        { emoji: '✨', count: 2, size: [16, 22] },
+        { emoji: '🖼️', count: 2, size: [22, 30] }
+    ]));
+
+    return items;
+}
+
+function buildMusicDecorations() {
+    const items = [];
+
+    // Notes rising up, as if drifting off an instrument.
+    const notes = ['🎵', '🎶'];
+    for (let i = 0; i < 8; i++) {
+        items.push(makeDeco('deco-bubble', notes[i % notes.length], {
+            '--x': randRange(2, 92) + 'vw',
+            '--size': randRange(18, 30) + 'px',
+            '--duration': randRange(12, 20) + 's',
+            '--delay': -randRange(0, 18) + 's',
+            '--drift': randRange(-30, 30) + 'px'
+        }));
+    }
+
+    // Instruments and headphones bobbing around the page.
+    items.push(...makeBobCluster([
+        { emoji: '🎸', count: 2, size: [24, 32] },
+        { emoji: '🎹', count: 2, size: [24, 32] },
+        { emoji: '🎺', count: 2, size: [22, 30] },
+        { emoji: '🥁', count: 2, size: [22, 30] },
+        { emoji: '🎧', count: 2, size: [22, 30] }
+    ]));
 
     return items;
 }
