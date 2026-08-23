@@ -2513,6 +2513,10 @@ body.light-theme .timer-progress {
                         <i data-lucide="moon"></i>
                         <span>Dark</span>
                     </button>
+                    <button type="button" class="theme-option-btn" id="themeOptionAuto" aria-label="Auto" data-tooltip="Matches your background's brightness" onclick="setTheme('auto')">
+                        <i data-lucide="contrast"></i>
+                        <span>Auto</span>
+                    </button>
                     <button type="button" class="theme-option-btn" id="themeOptionLight" onclick="setTheme('light')">
                         <i data-lucide="sun"></i>
                         <span>Light</span>
@@ -2646,10 +2650,11 @@ let state = {
     activities: [],
     logs: [],
     alarms: [],
-    theme: 'dark',
+    theme: 'dark', // 'dark' | 'light' | 'auto' (auto follows the background's brightness — see computeEffectiveTheme)
     accentColor: 'violet',
     specialTheme: 'default',
-    customBackgroundImage: null // data URL of a user-uploaded PNG/JPG, resized/compressed on upload
+    customBackgroundImage: null, // data URL of a user-uploaded PNG/JPG, resized/compressed on upload
+    customBackgroundIsDark: null // sampled average brightness of the uploaded photo, for 'auto' theme mode
 };
 
 // Accent color presets — each overrides --primary / --primary-glow / --primary-gradient
@@ -2932,7 +2937,7 @@ function loadState() {
             // Ensure necessary arrays exist
             if (!state.activities) state.activities = [];
             if (!state.logs) state.logs = [];
-            if (!state.theme) state.theme = 'dark';
+            if (state.theme !== 'dark' && state.theme !== 'light' && state.theme !== 'auto') state.theme = 'dark';
             if (!state.accentColor || !ACCENTS[state.accentColor]) state.accentColor = 'violet';
             if (!state.customBackgroundImage) state.customBackgroundImage = null;
             const specialThemeValid = state.specialTheme === 'custom'
@@ -2970,10 +2975,49 @@ function saveState() {
     }
 }
 
-// Theme handling
+// Theme handling — state.theme is the user's PREFERENCE ('dark' | 'light' |
+// 'auto'); computeEffectiveTheme() resolves that to the actual 'dark' | 'light'
+// applied to <body>, following the current background's brightness when 'auto'.
+
+// Perceived luminance (0-255) of a #rrggbb hex color.
+function hexLuminance(hex) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+// Estimate whether a built-in painting (a CSS gradient string) reads as dark,
+// by averaging the luminance of its solid hex color stops. Cheap and needs no
+// canvas — the paintings are all night-scene style gradients, so this is a
+// reliable enough proxy for "dark vs. bright" without hardcoding a flag per
+// theme that could drift out of sync if a painting's colors ever change.
+function computePaintingIsDark(painting) {
+    if (!painting || painting === 'none') return true; // no painting — fall back to dark
+    const hexes = painting.match(/#[0-9a-fA-F]{6}/g);
+    if (!hexes || hexes.length === 0) return true;
+    const avg = hexes.reduce((sum, h) => sum + hexLuminance(h), 0) / hexes.length;
+    return avg < 140;
+}
+
+// Is the currently active background (a painting, or the uploaded photo) dark?
+function getBackgroundIsDark() {
+    if (state.specialTheme === 'custom' && state.customBackgroundImage) {
+        return state.customBackgroundIsDark !== false; // default to dark if unsampled
+    }
+    const t = THEME_TYPES[state.specialTheme];
+    return computePaintingIsDark(t ? t.painting : 'none');
+}
+
+// Resolve the user's theme preference to an actual 'dark' | 'light'.
+function computeEffectiveTheme() {
+    if (state.theme === 'auto') return getBackgroundIsDark() ? 'dark' : 'light';
+    return state.theme;
+}
+
 function initTheme() {
     const body = document.body;
-    if (state.theme === 'light') {
+    if (computeEffectiveTheme() === 'light') {
         body.classList.remove('dark-theme');
         body.classList.add('light-theme');
     } else {
@@ -2982,21 +3026,24 @@ function initTheme() {
     }
 
     const darkBtn = document.getElementById('themeOptionDark');
+    const autoBtn = document.getElementById('themeOptionAuto');
     const lightBtn = document.getElementById('themeOptionLight');
     if (darkBtn) darkBtn.classList.toggle('active', state.theme === 'dark');
+    if (autoBtn) autoBtn.classList.toggle('active', state.theme === 'auto');
     if (lightBtn) lightBtn.classList.toggle('active', state.theme === 'light');
 
     lucide.createIcons();
 }
 
-// Set the theme (used by the Dark/Light buttons in the Settings panel).
+// Set the theme preference (used by the Dark/Auto/Light buttons in Settings).
 function setTheme(theme) {
-    if (theme !== 'dark' && theme !== 'light') return;
+    if (theme !== 'dark' && theme !== 'light' && theme !== 'auto') return;
     if (state.theme === theme) return;
     state.theme = theme;
     saveState();
     initTheme();
-    showToast(`Switched to ${state.theme} theme`, 'info');
+    const label = theme === 'auto' ? "auto (matching your background's brightness)" : theme;
+    showToast(`Switched to ${label} theme`, 'info');
 }
 
 // --- Settings modal (theme + theme type + accent color) ---
@@ -3118,6 +3165,7 @@ function applySpecialTheme(key) {
     state.specialTheme = isCustom ? 'custom' : key;
     applyThemeBackground(state.specialTheme);
     renderThemeDecorations(isCustom ? 'default' : key); // no floating decor over a personal photo
+    initTheme(); // re-resolve dark/light if the theme preference is 'auto'
 }
 
 // Paint the full-viewport #themeBackground layer: a built-in gradient "scene"
@@ -3200,6 +3248,24 @@ function renderThemeTypeButtons() {
 const CUSTOM_BG_MAX_DIMENSION = 1600;
 const CUSTOM_BG_JPEG_QUALITY = 0.82;
 
+// Sample a source canvas down to a tiny thumbnail and average its perceived
+// luminance, to classify the uploaded photo as dark or bright for 'auto' theme
+// mode. The thumbnail is only used for this measurement, never stored.
+function sampleCanvasIsDark(sourceCanvas) {
+    const SAMPLE = 24;
+    const thumb = document.createElement('canvas');
+    thumb.width = SAMPLE;
+    thumb.height = SAMPLE;
+    const ctx = thumb.getContext('2d');
+    ctx.drawImage(sourceCanvas, 0, 0, SAMPLE, SAMPLE);
+    const { data } = ctx.getImageData(0, 0, SAMPLE, SAMPLE);
+    let total = 0;
+    for (let i = 0; i < data.length; i += 4) {
+        total += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    }
+    return (total / (data.length / 4)) < 140;
+}
+
 function handleBackgroundUpload(event) {
     const file = event.target.files[0];
     event.target.value = ''; // allow re-selecting the same file later
@@ -3222,6 +3288,7 @@ function handleBackgroundUpload(event) {
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
+                state.customBackgroundIsDark = sampleCanvasIsDark(canvas);
                 state.customBackgroundImage = canvas.toDataURL('image/jpeg', CUSTOM_BG_JPEG_QUALITY);
                 setSpecialTheme('custom');
             } catch (err) {
@@ -3242,6 +3309,7 @@ function removeCustomBackground() {
 
     const wasActive = state.specialTheme === 'custom';
     state.customBackgroundImage = null;
+    state.customBackgroundIsDark = null;
     if (wasActive) {
         applySpecialTheme('default');
     }
@@ -4263,7 +4331,8 @@ function exportJSON() {
         theme: state.theme,
         accentColor: state.accentColor,
         specialTheme: state.specialTheme,
-        customBackgroundImage: state.customBackgroundImage
+        customBackgroundImage: state.customBackgroundImage,
+        customBackgroundIsDark: state.customBackgroundIsDark
     };
 
     const json = JSON.stringify(backup, null, 2);
@@ -4308,9 +4377,12 @@ function handleJSONImport(event) {
             if (Array.isArray(importedData.activities) && Array.isArray(importedData.logs)) {
                 state.activities = importedData.activities;
                 state.logs = importedData.logs;
-                if (importedData.theme) state.theme = importedData.theme;
+                if (importedData.theme === 'dark' || importedData.theme === 'light' || importedData.theme === 'auto') {
+                    state.theme = importedData.theme;
+                }
                 if (importedData.accentColor && ACCENTS[importedData.accentColor]) state.accentColor = importedData.accentColor;
                 if (importedData.customBackgroundImage) state.customBackgroundImage = importedData.customBackgroundImage;
+                if (typeof importedData.customBackgroundIsDark === 'boolean') state.customBackgroundIsDark = importedData.customBackgroundIsDark;
                 if (importedData.specialTheme === 'custom') {
                     state.specialTheme = state.customBackgroundImage ? 'custom' : 'default';
                 } else if (importedData.specialTheme && THEME_TYPES[importedData.specialTheme]) {
