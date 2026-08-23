@@ -1910,13 +1910,13 @@ body.light-theme .timer-progress {
     height: 16px;
 }
 
-/* Disabled while a Theme Type other than Default supplies its own full palette */
+/* Disabled while a Background Type other than Default supplies its own full palette */
 .accent-swatch-grid.disabled {
     opacity: 0.4;
     pointer-events: none;
 }
 
-/* Theme Type presets (Default / Birthday / Halloween / Winter, ...) */
+/* Background Type presets (Default / Birthday / Halloween / Winter / Custom, ...) */
 .theme-type-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -1953,14 +1953,66 @@ body.light-theme .timer-progress {
     box-shadow: 0 4px 15px var(--primary-glow);
 }
 
+/* Small round preview of the uploaded photo, shown inside the "Custom" button */
+.theme-type-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background-size: cover;
+    background-position: center;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+/* Upload / remove custom background photo */
+.bg-upload-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+    margin-top: 0.85rem;
+}
+
+.bg-upload-row .btn-block {
+    flex: 1;
+}
+
+.btn-icon-danger {
+    flex-shrink: 0;
+    border-color: var(--border-glass);
+    color: var(--text-muted);
+}
+
+.btn-icon-danger:hover {
+    background: rgba(244, 63, 94, 0.12);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ============================================================
+   THEME BACKGROUND (painting)
+   A full-viewport backdrop for the active Background Type — a layered
+   CSS-gradient "painting" for the built-in types, or a user-uploaded photo
+   (cover-fit) for Custom. Sits behind the decorations and the glass panels,
+   which show it through their blur. Purely decorative and non-interactive.
+   ============================================================ */
+
+.theme-background {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-repeat: no-repeat;
+    transition: opacity 0.25s ease;
+}
+
 /* ============================================================
    THEME DECORATIONS
-   Ambient, click-through decor for the active Theme Type — one per theme
-   (Birthday, Halloween, Winter, School, Summer, Space, Spring, Autumn,
+   Ambient, click-through decor for the active Background Type — one per
+   theme (Birthday, Halloween, Winter, School, Summer, Space, Spring, Autumn,
    Math, Science, Art, Music). Populated by JS out of a small set of shared,
    generic animation primitives (rise, fall+sway, fall+tumble, fly-across,
    bob-in-place, twinkle) driven entirely by CSS transform animations
-   (compositor-friendly, no layout thrash).
+   (compositor-friendly, no layout thrash). Not shown over a Custom photo.
    ============================================================ */
 
 .theme-decorations {

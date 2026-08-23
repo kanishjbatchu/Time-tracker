@@ -7,7 +7,8 @@ let state = {
     alarms: [],
     theme: 'dark',
     accentColor: 'violet',
-    specialTheme: 'default'
+    specialTheme: 'default',
+    customBackgroundImage: null // data URL of a user-uploaded PNG/JPG, resized/compressed on upload
 };
 
 // Accent color presets — each overrides --primary / --primary-glow / --primary-gradient
@@ -23,84 +24,98 @@ const ACCENTS = {
     blue:    { name: 'Blue',    primary: '#3b82f6', glow: 'rgba(59, 130, 246, 0.25)', gradient: 'linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%)' }
 };
 
-// Named "Theme Type" presets — each is a full festive palette (primary + secondary +
-// background glow tint) applied on top of whichever base Dark/Light mode is active.
-// Picking one overrides the plain Accent Color choice; picking 'default' restores it.
+// Named "Background Type" presets — each is a full festive palette (primary +
+// secondary + background glow tint) applied on top of whichever base Dark/Light
+// mode is active, plus a `painting`: a layered CSS gradient "scene" rendered
+// full-viewport behind the app (see applyThemeBackground). Picking one overrides
+// the plain Accent Color choice; picking 'default' restores it.
 const THEME_TYPES = {
-    default: { name: 'Default' },
+    default: { name: 'Default', painting: 'none' },
     birthday: {
         name: 'Birthday',
         primary: '#ec4899', glow: 'rgba(236, 72, 153, 0.28)', gradient: 'linear-gradient(135deg, #ec4899 0%, #facc15 100%)',
         secondary: '#8b5cf6', secondaryGlow: 'rgba(139, 92, 246, 0.28)', secondaryGradient: 'linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%)',
-        bgGlow1: 'rgba(236, 72, 153, 0.18)', bgGlow2: 'rgba(250, 204, 21, 0.15)', bgGlow3: 'rgba(139, 92, 246, 0.12)'
+        bgGlow1: 'rgba(236, 72, 153, 0.18)', bgGlow2: 'rgba(250, 204, 21, 0.15)', bgGlow3: 'rgba(139, 92, 246, 0.12)',
+        painting: 'radial-gradient(circle at 20% 20%, rgba(250, 204, 21, 0.30) 0%, transparent 40%), radial-gradient(circle at 80% 70%, rgba(236, 72, 153, 0.30) 0%, transparent 45%), linear-gradient(160deg, #2a1130 0%, #1a0f2e 55%, #0f0a1f 100%)'
     },
     halloween: {
         name: 'Halloween',
         primary: '#f97316', glow: 'rgba(249, 115, 22, 0.28)', gradient: 'linear-gradient(135deg, #f97316 0%, #7c3aed 100%)',
         secondary: '#7c3aed', secondaryGlow: 'rgba(124, 58, 237, 0.28)', secondaryGradient: 'linear-gradient(135deg, #7c3aed 0%, #4c1d95 100%)',
-        bgGlow1: 'rgba(249, 115, 22, 0.16)', bgGlow2: 'rgba(124, 58, 237, 0.16)', bgGlow3: 'rgba(16, 185, 129, 0.06)'
+        bgGlow1: 'rgba(249, 115, 22, 0.16)', bgGlow2: 'rgba(124, 58, 237, 0.16)', bgGlow3: 'rgba(16, 185, 129, 0.06)',
+        painting: 'radial-gradient(circle at 85% 12%, rgba(255, 237, 160, 0.35) 0%, transparent 20%), radial-gradient(circle at 15% 85%, rgba(249, 115, 22, 0.22) 0%, transparent 45%), linear-gradient(180deg, #150a24 0%, #1c1030 50%, #0a0612 100%)'
     },
     winter: {
         name: 'Winter',
         primary: '#0ea5e9', glow: 'rgba(14, 165, 233, 0.28)', gradient: 'linear-gradient(135deg, #0ea5e9 0%, #a5f3fc 100%)',
         secondary: '#6366f1', secondaryGlow: 'rgba(99, 102, 241, 0.28)', secondaryGradient: 'linear-gradient(135deg, #6366f1 0%, #38bdf8 100%)',
-        bgGlow1: 'rgba(14, 165, 233, 0.16)', bgGlow2: 'rgba(99, 102, 241, 0.14)', bgGlow3: 'rgba(165, 243, 252, 0.1)'
+        bgGlow1: 'rgba(14, 165, 233, 0.16)', bgGlow2: 'rgba(99, 102, 241, 0.14)', bgGlow3: 'rgba(165, 243, 252, 0.1)',
+        painting: 'radial-gradient(circle at 80% 15%, rgba(255, 255, 255, 0.3) 0%, transparent 30%), linear-gradient(180deg, #0c1a2e 0%, #16324f 45%, #0b1220 100%)'
     },
     school: {
         name: 'School',
         primary: '#2563eb', glow: 'rgba(37, 99, 235, 0.28)', gradient: 'linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%)',
         secondary: '#dc2626', secondaryGlow: 'rgba(220, 38, 38, 0.28)', secondaryGradient: 'linear-gradient(135deg, #dc2626 0%, #f59e0b 100%)',
-        bgGlow1: 'rgba(37, 99, 235, 0.16)', bgGlow2: 'rgba(220, 38, 38, 0.12)', bgGlow3: 'rgba(245, 158, 11, 0.08)'
+        bgGlow1: 'rgba(37, 99, 235, 0.16)', bgGlow2: 'rgba(220, 38, 38, 0.12)', bgGlow3: 'rgba(245, 158, 11, 0.08)',
+        painting: 'radial-gradient(circle at 50% 0%, rgba(37, 99, 235, 0.2) 0%, transparent 40%), radial-gradient(circle at 85% 85%, rgba(220, 38, 38, 0.15) 0%, transparent 35%), linear-gradient(180deg, #0b1e3d 0%, #142a52 50%, #0a1730 100%)'
     },
     summer: {
         name: 'Summer',
         primary: '#fb923c', glow: 'rgba(251, 146, 60, 0.28)', gradient: 'linear-gradient(135deg, #fb923c 0%, #facc15 100%)',
         secondary: '#14b8a6', secondaryGlow: 'rgba(20, 184, 166, 0.28)', secondaryGradient: 'linear-gradient(135deg, #14b8a6 0%, #0ea5e9 100%)',
-        bgGlow1: 'rgba(251, 146, 60, 0.16)', bgGlow2: 'rgba(20, 184, 166, 0.16)', bgGlow3: 'rgba(250, 204, 21, 0.1)'
+        bgGlow1: 'rgba(251, 146, 60, 0.16)', bgGlow2: 'rgba(20, 184, 166, 0.16)', bgGlow3: 'rgba(250, 204, 21, 0.1)',
+        painting: 'radial-gradient(circle at 50% 18%, rgba(250, 204, 21, 0.4) 0%, transparent 28%), linear-gradient(180deg, #ff9f68 0%, #fb7a5c 25%, #14375a 70%, #0a1f33 100%)'
     },
     space: {
         name: 'Space',
         primary: '#6366f1', glow: 'rgba(99, 102, 241, 0.28)', gradient: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
         secondary: '#22d3ee', secondaryGlow: 'rgba(34, 211, 238, 0.28)', secondaryGradient: 'linear-gradient(135deg, #22d3ee 0%, #6366f1 100%)',
-        bgGlow1: 'rgba(99, 102, 241, 0.18)', bgGlow2: 'rgba(34, 211, 238, 0.12)', bgGlow3: 'rgba(236, 72, 153, 0.1)'
+        bgGlow1: 'rgba(99, 102, 241, 0.18)', bgGlow2: 'rgba(34, 211, 238, 0.12)', bgGlow3: 'rgba(236, 72, 153, 0.1)',
+        painting: 'radial-gradient(circle at 70% 20%, rgba(236, 72, 153, 0.28) 0%, transparent 35%), radial-gradient(circle at 25% 70%, rgba(34, 211, 238, 0.22) 0%, transparent 40%), linear-gradient(180deg, #0a0a1f 0%, #150a2e 50%, #05040d 100%)'
     },
     // --- Season-based ---
     spring: {
         name: 'Spring',
         primary: '#22c55e', glow: 'rgba(34, 197, 94, 0.28)', gradient: 'linear-gradient(135deg, #22c55e 0%, #facc15 100%)',
         secondary: '#f472b6', secondaryGlow: 'rgba(244, 114, 182, 0.28)', secondaryGradient: 'linear-gradient(135deg, #f472b6 0%, #fb7185 100%)',
-        bgGlow1: 'rgba(34, 197, 94, 0.16)', bgGlow2: 'rgba(244, 114, 182, 0.14)', bgGlow3: 'rgba(250, 204, 21, 0.08)'
+        bgGlow1: 'rgba(34, 197, 94, 0.16)', bgGlow2: 'rgba(244, 114, 182, 0.14)', bgGlow3: 'rgba(250, 204, 21, 0.08)',
+        painting: 'radial-gradient(circle at 50% 10%, rgba(250, 204, 21, 0.3) 0%, transparent 30%), linear-gradient(180deg, #143d24 0%, #1e5c33 45%, #0d2417 100%)'
     },
     autumn: {
         name: 'Autumn',
         primary: '#d97706', glow: 'rgba(217, 119, 6, 0.28)', gradient: 'linear-gradient(135deg, #d97706 0%, #b91c1c 100%)',
         secondary: '#92400e', secondaryGlow: 'rgba(146, 64, 14, 0.28)', secondaryGradient: 'linear-gradient(135deg, #92400e 0%, #78350f 100%)',
-        bgGlow1: 'rgba(217, 119, 6, 0.16)', bgGlow2: 'rgba(146, 64, 14, 0.14)', bgGlow3: 'rgba(185, 28, 28, 0.08)'
+        bgGlow1: 'rgba(217, 119, 6, 0.16)', bgGlow2: 'rgba(146, 64, 14, 0.14)', bgGlow3: 'rgba(185, 28, 28, 0.08)',
+        painting: 'radial-gradient(circle at 30% 15%, rgba(251, 191, 36, 0.32) 0%, transparent 35%), linear-gradient(180deg, #4a2c0f 0%, #7a3b12 35%, #2c1608 100%)'
     },
     // --- Subject-based ---
     math: {
         name: 'Math',
         primary: '#4f46e5', glow: 'rgba(79, 70, 229, 0.28)', gradient: 'linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)',
         secondary: '#f59e0b', secondaryGlow: 'rgba(245, 158, 11, 0.28)', secondaryGradient: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)',
-        bgGlow1: 'rgba(79, 70, 229, 0.16)', bgGlow2: 'rgba(245, 158, 11, 0.12)', bgGlow3: 'rgba(6, 182, 212, 0.08)'
+        bgGlow1: 'rgba(79, 70, 229, 0.16)', bgGlow2: 'rgba(245, 158, 11, 0.12)', bgGlow3: 'rgba(6, 182, 212, 0.08)',
+        painting: 'radial-gradient(circle at 50% 50%, rgba(79, 70, 229, 0.15) 0%, transparent 60%), linear-gradient(160deg, #0d3b2e 0%, #0a2b21 100%)'
     },
     science: {
         name: 'Science',
         primary: '#0d9488', glow: 'rgba(13, 148, 136, 0.28)', gradient: 'linear-gradient(135deg, #0d9488 0%, #22d3ee 100%)',
         secondary: '#a855f7', secondaryGlow: 'rgba(168, 85, 247, 0.28)', secondaryGradient: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
-        bgGlow1: 'rgba(13, 148, 136, 0.16)', bgGlow2: 'rgba(168, 85, 247, 0.14)', bgGlow3: 'rgba(34, 211, 238, 0.08)'
+        bgGlow1: 'rgba(13, 148, 136, 0.16)', bgGlow2: 'rgba(168, 85, 247, 0.14)', bgGlow3: 'rgba(34, 211, 238, 0.08)',
+        painting: 'radial-gradient(circle at 75% 20%, rgba(168, 85, 247, 0.28) 0%, transparent 35%), radial-gradient(circle at 25% 80%, rgba(13, 148, 136, 0.24) 0%, transparent 40%), linear-gradient(180deg, #05201d 0%, #0a1a2e 100%)'
     },
     art: {
         name: 'Art',
         primary: '#d946ef', glow: 'rgba(217, 70, 239, 0.28)', gradient: 'linear-gradient(135deg, #d946ef 0%, #f59e0b 100%)',
         secondary: '#06b6d4', secondaryGlow: 'rgba(6, 182, 212, 0.28)', secondaryGradient: 'linear-gradient(135deg, #06b6d4 0%, #22c55e 100%)',
-        bgGlow1: 'rgba(217, 70, 239, 0.16)', bgGlow2: 'rgba(6, 182, 212, 0.14)', bgGlow3: 'rgba(245, 158, 11, 0.1)'
+        bgGlow1: 'rgba(217, 70, 239, 0.16)', bgGlow2: 'rgba(6, 182, 212, 0.14)', bgGlow3: 'rgba(245, 158, 11, 0.1)',
+        painting: 'radial-gradient(circle at 20% 30%, rgba(217, 70, 239, 0.32) 0%, transparent 40%), radial-gradient(circle at 80% 70%, rgba(245, 158, 11, 0.28) 0%, transparent 40%), radial-gradient(circle at 50% 90%, rgba(6, 182, 212, 0.22) 0%, transparent 45%), linear-gradient(160deg, #1a0a24 0%, #0d0a1f 100%)'
     },
     music: {
         name: 'Music',
         primary: '#a855f7', glow: 'rgba(168, 85, 247, 0.28)', gradient: 'linear-gradient(135deg, #a855f7 0%, #ec4899 100%)',
         secondary: '#f59e0b', secondaryGlow: 'rgba(245, 158, 11, 0.28)', secondaryGradient: 'linear-gradient(135deg, #f59e0b 0%, #a855f7 100%)',
-        bgGlow1: 'rgba(168, 85, 247, 0.18)', bgGlow2: 'rgba(236, 72, 153, 0.14)', bgGlow3: 'rgba(245, 158, 11, 0.08)'
+        bgGlow1: 'rgba(168, 85, 247, 0.18)', bgGlow2: 'rgba(236, 72, 153, 0.14)', bgGlow3: 'rgba(245, 158, 11, 0.08)',
+        painting: 'radial-gradient(circle at 30% 20%, rgba(168, 85, 247, 0.32) 0%, transparent 35%), radial-gradient(circle at 70% 30%, rgba(245, 158, 11, 0.22) 0%, transparent 35%), linear-gradient(180deg, #1a0a24 0%, #0d0a1a 100%)'
     }
 };
 
@@ -191,6 +206,16 @@ function setupEventListeners() {
         });
     }
 
+    // Settings: upload / remove a custom background photo
+    const btnUploadBackground = document.getElementById('btnUploadBackground');
+    const backgroundUploadInput = document.getElementById('backgroundUploadInput');
+    if (btnUploadBackground && backgroundUploadInput) {
+        btnUploadBackground.addEventListener('click', () => backgroundUploadInput.click());
+        backgroundUploadInput.addEventListener('change', handleBackgroundUpload);
+    }
+    const btnRemoveBackground = document.getElementById('btnRemoveBackground');
+    if (btnRemoveBackground) btnRemoveBackground.addEventListener('click', removeCustomBackground);
+
     // Alarm: header button toggles the alarm customization panel
     const btnToggleAlarm = document.getElementById('btnToggleAlarm');
     if (btnToggleAlarm) btnToggleAlarm.addEventListener('click', toggleAlarmPanel);
@@ -268,7 +293,11 @@ function loadState() {
             if (!state.logs) state.logs = [];
             if (!state.theme) state.theme = 'dark';
             if (!state.accentColor || !ACCENTS[state.accentColor]) state.accentColor = 'violet';
-            if (!state.specialTheme || !THEME_TYPES[state.specialTheme]) state.specialTheme = 'default';
+            if (!state.customBackgroundImage) state.customBackgroundImage = null;
+            const specialThemeValid = state.specialTheme === 'custom'
+                ? !!state.customBackgroundImage
+                : !!THEME_TYPES[state.specialTheme];
+            if (!specialThemeValid) state.specialTheme = 'default';
             delete state.notes; // drop any leftover data from the removed notepad
             // Alarms are session-only: they are created via the "Set Alarm" button
             // and never restored from storage, so none "load" on page load.
@@ -414,13 +443,17 @@ const THEME_TYPE_ICONS = {
     math: 'calculator', science: 'flask-conical', art: 'paintbrush', music: 'music'
 };
 
-// Apply a Theme Type's full palette (primary/secondary/background glow) on <body>.
-// 'default' clears those overrides and falls back to the plain Accent Color instead.
+// Apply a Background Type's full palette (primary/secondary/background glow) on
+// <body>. 'default' clears those overrides and falls back to the plain Accent
+// Color instead. 'custom' (an uploaded photo) behaves like 'default' for the
+// palette — we don't know good matching colors for an arbitrary photo — but
+// still gets its own background painting (the photo itself).
 function applySpecialTheme(key) {
-    if (!THEME_TYPES[key]) key = 'default';
+    const isCustom = key === 'custom' && !!state.customBackgroundImage;
+    if (!isCustom && !THEME_TYPES[key]) key = 'default';
     const body = document.body;
 
-    if (key === 'default') {
+    if (key === 'default' || isCustom) {
         body.style.removeProperty('--secondary');
         body.style.removeProperty('--secondary-glow');
         body.style.removeProperty('--secondary-gradient');
@@ -441,17 +474,39 @@ function applySpecialTheme(key) {
         body.style.setProperty('--bg-glow-3', t.bgGlow3);
     }
 
-    state.specialTheme = key;
-    renderThemeDecorations(key);
+    state.specialTheme = isCustom ? 'custom' : key;
+    applyThemeBackground(state.specialTheme);
+    renderThemeDecorations(isCustom ? 'default' : key); // no floating decor over a personal photo
+}
+
+// Paint the full-viewport #themeBackground layer: a built-in gradient "scene"
+// for named types, the uploaded photo (cover-fit) for 'custom', or nothing for
+// 'default'.
+function applyThemeBackground(key) {
+    const layer = document.getElementById('themeBackground');
+    if (!layer) return;
+
+    if (key === 'custom' && state.customBackgroundImage) {
+        layer.style.backgroundImage = `url(${state.customBackgroundImage})`;
+        layer.style.backgroundSize = 'cover';
+        layer.style.backgroundPosition = 'center';
+    } else {
+        const t = THEME_TYPES[key];
+        layer.style.backgroundImage = (t && t.painting) ? t.painting : 'none';
+        layer.style.backgroundSize = '';
+        layer.style.backgroundPosition = '';
+    }
 }
 
 function setSpecialTheme(key) {
-    if (!THEME_TYPES[key]) return;
+    if (key !== 'custom' && !THEME_TYPES[key]) return;
+    if (key === 'custom' && !state.customBackgroundImage) return;
     applySpecialTheme(key);
     saveState();
     renderThemeTypeButtons();
     renderAccentSwatches();
-    showToast(`Theme set to ${THEME_TYPES[key].name}`, 'info');
+    const name = key === 'custom' ? 'Custom' : THEME_TYPES[key].name;
+    showToast(`Background set to ${name}`, 'info');
 }
 
 function initThemeType() {
@@ -473,7 +528,86 @@ function renderThemeTypeButtons() {
         btn.onclick = () => setSpecialTheme(key);
         grid.appendChild(btn);
     });
+
+    // "Custom" only appears once a photo has been uploaded.
+    if (state.customBackgroundImage) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `theme-type-btn${state.specialTheme === 'custom' ? ' active' : ''}`;
+        const thumb = document.createElement('span');
+        thumb.className = 'theme-type-thumb';
+        thumb.style.backgroundImage = `url(${state.customBackgroundImage})`;
+        btn.appendChild(thumb);
+        const label = document.createElement('span');
+        label.textContent = 'Custom';
+        btn.appendChild(label);
+        btn.onclick = () => setSpecialTheme('custom');
+        grid.appendChild(btn);
+    }
+
     lucide.createIcons();
+
+    const removeBtn = document.getElementById('btnRemoveBackground');
+    if (removeBtn) removeBtn.style.display = state.customBackgroundImage ? 'flex' : 'none';
+}
+
+// --- Custom background photo (upload / remove) ---
+// Uploaded photos are downscaled and re-encoded as JPEG on a canvas before
+// being stored as a data URL — a straight-from-camera photo can be many MB,
+// which would blow past localStorage's ~5-10MB quota; capping the longest
+// edge and compressing keeps a saved backup + the persisted state small.
+const CUSTOM_BG_MAX_DIMENSION = 1600;
+const CUSTOM_BG_JPEG_QUALITY = 0.82;
+
+function handleBackgroundUpload(event) {
+    const file = event.target.files[0];
+    event.target.value = ''; // allow re-selecting the same file later
+    if (!file) return;
+
+    if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
+        showToast('Please choose a PNG or JPG image.', 'warning');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const scale = Math.min(1, CUSTOM_BG_MAX_DIMENSION / Math.max(img.width, img.height));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.round(img.width * scale);
+                canvas.height = Math.round(img.height * scale);
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                state.customBackgroundImage = canvas.toDataURL('image/jpeg', CUSTOM_BG_JPEG_QUALITY);
+                setSpecialTheme('custom');
+            } catch (err) {
+                console.error('Failed to process background image.', err);
+                showToast('Could not process that image.', 'error');
+            }
+        };
+        img.onerror = () => showToast('Could not read that image file.', 'error');
+        img.src = e.target.result;
+    };
+    reader.onerror = () => showToast('Could not read that image file.', 'error');
+    reader.readAsDataURL(file);
+}
+
+function removeCustomBackground() {
+    if (!state.customBackgroundImage) return;
+    if (!confirm('Remove your custom background photo?')) return;
+
+    const wasActive = state.specialTheme === 'custom';
+    state.customBackgroundImage = null;
+    if (wasActive) {
+        applySpecialTheme('default');
+    }
+    saveState();
+    renderThemeTypeButtons();
+    renderAccentSwatches();
+    showToast('Custom background removed', 'info');
 }
 
 // --- Theme decorations (ambient, click-through) ---
@@ -1487,7 +1621,8 @@ function exportJSON() {
         logs: state.logs,
         theme: state.theme,
         accentColor: state.accentColor,
-        specialTheme: state.specialTheme
+        specialTheme: state.specialTheme,
+        customBackgroundImage: state.customBackgroundImage
     };
 
     const json = JSON.stringify(backup, null, 2);
@@ -1534,7 +1669,12 @@ function handleJSONImport(event) {
                 state.logs = importedData.logs;
                 if (importedData.theme) state.theme = importedData.theme;
                 if (importedData.accentColor && ACCENTS[importedData.accentColor]) state.accentColor = importedData.accentColor;
-                if (importedData.specialTheme && THEME_TYPES[importedData.specialTheme]) state.specialTheme = importedData.specialTheme;
+                if (importedData.customBackgroundImage) state.customBackgroundImage = importedData.customBackgroundImage;
+                if (importedData.specialTheme === 'custom') {
+                    state.specialTheme = state.customBackgroundImage ? 'custom' : 'default';
+                } else if (importedData.specialTheme && THEME_TYPES[importedData.specialTheme]) {
+                    state.specialTheme = importedData.specialTheme;
+                }
 
                 // If a timer was running when the backup was saved, fold the
                 // elapsed offline time into its total and restart the clock now.
