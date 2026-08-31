@@ -2199,12 +2199,6 @@ body.light-theme .timer-progress {
     color: #fff;
 }
 
-/* #activitiesGrid needs to be a positioning context as the containing block
-   for the Riddle of the Day widget. */
-.activities-grid {
-    position: relative;
-}
-
 /* Draggable items get a dashed "grab me" outline only while editing. */
 body.edit-mode-active .swap-btn,
 body.edit-mode-active .activity-card,
@@ -2240,15 +2234,19 @@ body.edit-mode-active .dashboard-card:active {
    RIDDLE OF THE DAY
    ============================================================ */
 
-/* Anchored inside the tracker cards area (#activitiesGrid), inset from its
-   corner — not pinned to the page's actual top-right corner. */
+/* Docked in its own row directly above the tracker cards, right-aligned —
+   a reserved spot in normal document flow, so no card (and nothing else)
+   can ever render underneath or overlap it. Not pinned to the page's
+   actual top-right corner; it belongs to the tracker cards area. */
+.riddle-dock {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 1.25rem;
+}
+
 .riddle-widget {
-    position: absolute;
-    top: 0.85rem;
-    right: 0.85rem;
     width: 280px;
-    max-width: calc(100% - 1.7rem);
-    z-index: 20;
+    max-width: 100%;
     padding: 1rem 1.1rem;
     animation: slideIn 0.3s ease;
 }
@@ -2394,8 +2392,6 @@ body.light-theme .riddle-form input {
 
 @media (max-width: 768px) {
     .riddle-widget {
-        top: 0.5rem;
-        right: 0.5rem;
-        width: 240px;
+        width: 100%;
     }
 }
