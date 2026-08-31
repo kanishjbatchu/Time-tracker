@@ -9,7 +9,10 @@ let state = {
     accentColor: 'violet',
     specialTheme: 'default',
     customBackgroundImage: null, // data URL of a user-uploaded PNG/JPG, resized/compressed on upload
-    customBackgroundIsDark: null // sampled average brightness of the uploaded photo, for 'auto' theme mode
+    customBackgroundIsDark: null, // sampled average brightness of the uploaded photo, for 'auto' theme mode
+    headerButtonOrder: [],  // [id, ...] — saved swap order of header buttons from Edit Mode
+    dashboardCardOrder: [], // [{id, pane}] — saved swap order of dashboard cards from Edit Mode
+    riddle: null          // { date: 'YYYY-MM-DD', solved: boolean } — today's Riddle of the Day progress
 };
 
 // Accent color presets — each overrides --primary / --primary-glow / --primary-gradient
@@ -151,6 +154,11 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     initTheme();
     initThemeType();
+    applyDashboardCardOrder();
+    applyHeaderButtonOrder();
+    initHeaderButtonDragging();
+    initDashboardCardDragging();
+    initRiddle();
     populateRingtoneOptions();
     setDefaultAlarmDateTime();
     prepareRingtones(); // render ringtone WAVs up front so alarms can ring instantly
@@ -191,6 +199,18 @@ function setupEventListeners() {
     // Reset Logs Only
     const btnClearLogs = document.getElementById('btnClearLogs');
     btnClearLogs.addEventListener('click', resetLogsOnly);
+
+    // Edit Mode: swap dashboard/tracker cards, drag header buttons freely
+    const btnToggleEditMode = document.getElementById('btnToggleEditMode');
+    if (btnToggleEditMode) btnToggleEditMode.addEventListener('click', toggleEditMode);
+    blockClicksDuringEditMode(document.querySelector('.dashboard-grid'));
+    blockClicksDuringEditMode(document.querySelector('.header-actions'), '#btnToggleEditMode');
+
+    // Riddle of the Day: answer form + collapse toggle
+    const riddleForm = document.getElementById('riddleForm');
+    if (riddleForm) riddleForm.addEventListener('submit', submitRiddleAnswer);
+    const riddleHeader = document.getElementById('riddleHeader');
+    if (riddleHeader) riddleHeader.addEventListener('click', toggleRiddleCollapsed);
 
     // Settings: header button opens the settings modal; the X button and
     // clicking the dimmed backdrop both close it.
@@ -299,6 +319,8 @@ function loadState() {
                 ? !!state.customBackgroundImage
                 : !!THEME_TYPES[state.specialTheme];
             if (!specialThemeValid) state.specialTheme = 'default';
+            if (!Array.isArray(state.headerButtonOrder)) state.headerButtonOrder = [];
+            if (!Array.isArray(state.dashboardCardOrder)) state.dashboardCardOrder = [];
             delete state.notes; // drop any leftover data from the removed notepad
             // Alarms are session-only: they are created via the "Set Alarm" button
             // and never restored from storage, so none "load" on page load.
@@ -1094,6 +1116,574 @@ function buildMusicDecorations() {
     return items;
 }
 
+// =======================================================================
+// EDIT MODE
+// - Dashboard cards (Create Activity, Alarm, Timer, Analytics, Session Log)
+//   and tracker cards (individual activities) SWAP places with whatever
+//   card they're dropped onto.
+// - Header buttons still drag freely within their zone, clamped so
+//   #btnToggleEditMode is always the leftmost element.
+// =======================================================================
+
+function toggleEditMode() {
+    const active = !document.body.classList.contains('edit-mode-active');
+    document.body.classList.toggle('edit-mode-active', active);
+    const btn = document.getElementById('btnToggleEditMode');
+    if (btn) btn.classList.toggle('active', active);
+    showToast(active ? 'Edit mode on — drag cards and buttons to rearrange' : 'Edit mode off', 'info');
+}
+
+// Swallow clicks inside `container` while edit mode is active, in a capturing
+// listener so it runs before any inner button's own click handler — otherwise
+// dropping a drag (a pointerdown+pointerup with little movement) can also fire
+// a native click, e.g. starting a stopwatch or exporting JSON by accident.
+// `allowSelector`, if given, lets clicks through for matching targets (used so
+// the Edit Mode button itself can still be clicked to turn editing back off).
+function blockClicksDuringEditMode(container, allowSelector) {
+    if (!container) return;
+    container.addEventListener('click', (e) => {
+        if (!document.body.classList.contains('edit-mode-active')) return;
+        if (allowSelector && e.target.closest(allowSelector)) return;
+        e.stopPropagation();
+        e.preventDefault();
+    }, true);
+}
+
+// Header buttons: swap with whatever button they're dropped onto, exactly
+// like dashboard/tracker cards. #btnToggleEditMode has no .swap-btn class, so
+// it's never a valid drag source or drop target — it just always stays put.
+function initHeaderButtonDragging() {
+    document.querySelectorAll('.header-actions .swap-btn').forEach(btn => {
+        makeSwappable(btn, '.swap-btn', (draggedEl, targetEl) => {
+            swapElements(draggedEl, targetEl);
+            saveHeaderButtonOrder();
+        });
+    });
+}
+
+function saveHeaderButtonOrder() {
+    const buttons = document.querySelectorAll('.header-actions .swap-btn');
+    state.headerButtonOrder = Array.from(buttons).map(el => el.id);
+    saveState();
+}
+
+// Re-apply a saved header button order on load — appendChild on an existing
+// node relocates it, so processing ids in saved order rebuilds the sequence.
+// #btnToggleEditMode and the hidden #importFile input are never touched, so
+// they stay exactly where they started (Edit Mode leftmost).
+function applyHeaderButtonOrder() {
+    if (!state.headerButtonOrder || !state.headerButtonOrder.length) return;
+    const container = document.querySelector('.header-actions');
+    if (!container) return;
+    state.headerButtonOrder.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) container.appendChild(el);
+    });
+}
+
+// Make `el` swap-draggable: dragging it onto another element matching
+// `groupSelector` (via onSwap(draggedEl, targetEl)) exchanges their places.
+// Used for dashboard cards and tracker cards — unlike header buttons, these
+// don't support free positioning, only swapping with another card.
+function makeSwappable(el, groupSelector, onSwap) {
+    if (!el) return;
+
+    el.addEventListener('pointerdown', (e) => {
+        if (!document.body.classList.contains('edit-mode-active')) return;
+        if (e.button !== 0) return;
+        e.preventDefault();
+
+        const startX = e.clientX;
+        const startY = e.clientY;
+        let dragging = false;
+        let target = null;
+
+        function onMove(ev) {
+            if (!dragging) {
+                // Small threshold so a plain click doesn't count as a drag.
+                if (Math.abs(ev.clientX - startX) < 4 && Math.abs(ev.clientY - startY) < 4) return;
+                dragging = true;
+                el.classList.add('dragging-swap');
+            }
+
+            el.style.transform = `translate(${ev.clientX - startX}px, ${ev.clientY - startY}px)`;
+
+            // Hide `el` from hit-testing so elementFromPoint can see what's underneath it.
+            el.style.pointerEvents = 'none';
+            const under = document.elementFromPoint(ev.clientX, ev.clientY);
+            el.style.pointerEvents = '';
+
+            const candidateEl = under ? under.closest(groupSelector) : null;
+            const candidate = (candidateEl && candidateEl !== el) ? candidateEl : null;
+
+            if (target && target !== candidate) target.classList.remove('swap-target');
+            if (candidate) candidate.classList.add('swap-target');
+            target = candidate;
+        }
+
+        function onUp() {
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            el.style.transform = '';
+            el.classList.remove('dragging-swap');
+            if (target) {
+                target.classList.remove('swap-target');
+                onSwap(el, target);
+            }
+        }
+
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+    });
+}
+
+// Swap two arbitrary DOM nodes' positions, regardless of whether they share a
+// parent or are adjacent siblings.
+function swapElements(a, b) {
+    if (!a || !b || a === b) return;
+    const placeholder = document.createComment('swap-placeholder');
+    a.parentNode.insertBefore(placeholder, a);
+    b.parentNode.insertBefore(a, b);
+    placeholder.parentNode.insertBefore(b, placeholder);
+    placeholder.remove();
+}
+
+// Dashboard cards (Create Activity, Alarm, Timer, Analytics, Session Log):
+// swap DOM position with whatever card they're dropped onto, and persist the
+// resulting order (which pane each card ends up in, and in what sequence).
+function initDashboardCardDragging() {
+    document.querySelectorAll('.dashboard-card').forEach(card => {
+        makeSwappable(card, '.dashboard-card', (draggedEl, targetEl) => {
+            swapElements(draggedEl, targetEl);
+            saveDashboardCardOrder();
+        });
+    });
+}
+
+function saveDashboardCardOrder() {
+    const cards = document.querySelectorAll('.left-pane .dashboard-card, .right-pane .dashboard-card');
+    state.dashboardCardOrder = Array.from(cards).map(el => ({
+        id: el.id,
+        pane: el.closest('.left-pane') ? 'left' : 'right'
+    }));
+    saveState();
+}
+
+// Re-apply a saved dashboard card order on load, by re-appending each card
+// (in saved order) into its recorded pane — appendChild on an existing node
+// relocates it, so processing entries in order rebuilds the exact sequence.
+function applyDashboardCardOrder() {
+    if (!state.dashboardCardOrder || !state.dashboardCardOrder.length) return;
+    const leftPane = document.querySelector('.left-pane');
+    const rightPane = document.querySelector('.right-pane');
+    state.dashboardCardOrder.forEach(({ id, pane }) => {
+        const el = document.getElementById(id);
+        const container = pane === 'left' ? leftPane : rightPane;
+        if (el && container) container.appendChild(el);
+    });
+}
+
+// Tracker (activity) cards: swap with whatever card they're dropped onto by
+// exchanging their positions in state.activities. Called once per card each
+// time renderActivities() (re)builds the grid.
+function initCardDragging(act) {
+    const el = document.getElementById(`card-${act.id}`);
+    if (!el) return;
+    makeSwappable(el, '.activity-card', (draggedEl, targetEl) => {
+        swapActivityOrder(draggedEl.id.replace('card-', ''), targetEl.id.replace('card-', ''));
+    });
+}
+
+function swapActivityOrder(idA, idB) {
+    if (idA === idB) return;
+    const idxA = state.activities.findIndex(a => a.id === idA);
+    const idxB = state.activities.findIndex(a => a.id === idB);
+    if (idxA === -1 || idxB === -1) return;
+    const tmp = state.activities[idxA];
+    state.activities[idxA] = state.activities[idxB];
+    state.activities[idxB] = tmp;
+    saveState();
+    renderActivities();
+}
+
+// =======================================================================
+// RIDDLE OF THE DAY — a new riddle each calendar day (deterministic, so
+// everyone sees the same one), answer checked case-insensitively.
+// =======================================================================
+
+const RIDDLES = [
+    { q: "What has keys but can't open locks?", a: ['a piano', 'piano'] },
+    { q: 'What has a face and two hands but no arms or legs?', a: ['a clock', 'clock'] },
+    { q: 'What has to be broken before you can use it?', a: ['an egg', 'egg'] },
+    { q: 'I speak without a mouth and hear without ears. I have no body, but I come alive with wind. What am I?', a: ['an echo', 'echo'] },
+    { q: 'The more you take, the more you leave behind. What am I?', a: ['footsteps', 'footprints'] },
+    { q: 'What month of the year has 28 days?', a: ['all of them', 'all months', 'every month', 'all'] },
+    { q: "What has one eye but can't see?", a: ['a needle', 'needle'] },
+    { q: 'What can travel around the world while staying in a corner?', a: ['a stamp', 'stamp'] },
+    { q: 'What gets wetter as it dries?', a: ['a towel', 'towel'] },
+    { q: "What has many teeth but can't bite?", a: ['a comb', 'comb'] },
+    { q: 'What has a neck but no head?', a: ['a bottle', 'bottle'] },
+    { q: 'What goes up but never comes down?', a: ['your age', 'age'] },
+    { q: "What has hands but can't clap?", a: ['a clock', 'clock'] },
+    { q: 'What is full of holes but still holds water?', a: ['a sponge', 'sponge'] },
+    { q: 'What can you catch but not throw?', a: ['a cold', 'cold'] },
+    { q: 'What has a bottom at the top?', a: ['your legs', 'legs'] },
+    { q: 'What runs but never walks, has a mouth but never talks?', a: ['a river', 'river'] },
+    { q: 'What invention lets you look right through a wall?', a: ['a window', 'window'] },
+    { q: "What has legs but doesn't walk?", a: ['a table', 'table', 'a chair', 'chair'] },
+    { q: 'What can fill a room but takes up no space?', a: ['light'] },
+    { q: 'What comes once in a minute, twice in a moment, but never in a thousand years?', a: ['the letter m', 'letter m', 'm'] },
+    { q: 'What has an eye but cannot see, and a bed but never sleeps?', a: ['a river', 'river'] },
+    { q: 'What kind of room has no doors or windows?', a: ['a mushroom', 'mushroom'] },
+    { q: 'What begins with T, ends with T, and has T in it?', a: ['a teapot', 'teapot'] },
+    { q: 'What can you break without touching it?', a: ['a promise'] },
+    { q: 'What has a head, a tail, is brown, and has no legs?', a: ['a penny', 'penny', 'a coin', 'coin'] },
+    { q: 'What is easy to get into but hard to get out of?', a: ['trouble'] },
+    { q: "What is always in front of you but can't be seen?", a: ['the future', 'future'] },
+    { q: 'What has one head, one foot, and four legs?', a: ['a bed', 'bed'] },
+    { q: 'What is so fragile that saying its name breaks it?', a: ['silence'] },
+    { q: 'What can you keep after giving it to someone?', a: ['your word', 'word'] },
+    { q: 'What has words but never speaks?', a: ['a book', 'book'] },
+
+    // --- Objects & everyday things ---
+    { q: "What has a thumb and four fingers but isn't alive?", a: ['a glove', 'glove'] },
+    { q: 'What has a ring but no finger, and rings without ever calling itself?', a: ['a telephone', 'telephone', 'a phone', 'phone'] },
+    { q: "What has teeth but can't eat, and helps you cut through wood?", a: ['a saw', 'saw'] },
+    { q: 'What has a spine but no bones, and pages instead of ribs?', a: ['a book', 'book'] },
+    { q: 'What has many keys, opens no doors, and is used every day to write?', a: ['a keyboard', 'keyboard'] },
+    { q: 'What kind of coat is always wet when you put it on?', a: ['a coat of paint', 'coat of paint', 'paint'] },
+    { q: 'What is black when clean and white when dirty?', a: ['a chalkboard', 'chalkboard', 'a blackboard', 'blackboard'] },
+    { q: 'What has four wheels and flies, but is never seen soaring through the sky?', a: ['a garbage truck', 'garbage truck'] },
+    { q: "What goes up and down all day but never actually moves from its spot?", a: ['stairs', 'a staircase'] },
+    { q: 'What has a heart that never beats, hiding at the center of a vegetable?', a: ['an artichoke', 'artichoke'] },
+    { q: 'What can you hold for a long time without ever touching it with your hands?', a: ['your breath', 'breath'] },
+    { q: 'What starts completely empty but is always full of letters by the end of the week?', a: ['a mailbox', 'mailbox'] },
+    { q: "What has a ring, but not on a finger, and wakes you up in the morning?", a: ['an alarm clock', 'alarm clock'] },
+    { q: 'What kind of band is worn around your wrist but never plays a note of music?', a: ['a rubber band', 'rubber band'] },
+    { q: "What kind of dog never barks, and you might put mustard on it?", a: ['a hot dog', 'hot dog'] },
+    { q: "What kind of cup can't hold any water at all, but you can eat it after a party?", a: ['a cupcake', 'cupcake'] },
+    { q: 'What kind of nut has no shell but is covered in glaze or sprinkles?', a: ['a doughnut', 'doughnut', 'a donut', 'donut'] },
+    { q: 'What has one horn, four legs, and delivers milk instead of making music?', a: ['a milk truck', 'milk truck'] },
+    { q: 'What runs all the way around a yard but never takes a single step?', a: ['a fence', 'fence'] },
+    { q: 'What word starts with an E, ends with an E, but usually only has one letter inside it?', a: ['an envelope', 'envelope'] },
+    { q: 'What word is spelled incorrectly in absolutely every dictionary?', a: ['wrong', 'the word wrong'] },
+    { q: 'What five-letter word becomes shorter the moment you add two more letters to it?', a: ['short'] },
+    { q: 'What word reads exactly the same upside down and backward?', a: ['swims'] },
+    { q: 'What has cities but no houses, forests but no trees, and rivers but no water?', a: ['a map', 'map'] },
+    { q: 'What always points north, no matter which way you turn it?', a: ['a compass', 'compass'] },
+    { q: 'What kind of table has no legs to stand on at all?', a: ['a timetable', 'timetable'] },
+    { q: 'What has a lock but no door, and keeps all your secrets safe in writing?', a: ['a diary', 'diary', 'a journal', 'journal'] },
+    { q: 'What can be cracked, made, told, and played, all without ever being a physical object?', a: ['a joke', 'joke'] },
+    { q: 'What has an army of pieces but no real weapons, and battles are fought on a checkered board?', a: ['chess', 'a chess set'] },
+    { q: 'What kind of "ship" has no captain, never touches water, but can carry two people for years?', a: ['a relationship', 'relationship'] },
+    { q: 'What falls all the time but is never hurt when it lands?', a: ['rain'] },
+    { q: 'What falls every single day but never actually breaks?', a: ['night', 'nightfall'] },
+    { q: 'What goes up in the air the moment rain starts coming down?', a: ['an umbrella', 'umbrella'] },
+    { q: 'What is always coming but somehow never actually arrives?', a: ['tomorrow'] },
+    { q: "What letter can you find in the middle of March and April, but not at the start or end of either?", a: ['the letter r', 'letter r', 'r'] },
+    { q: 'What walks on four legs in the morning, two legs in the afternoon, and three legs in the evening?', a: ['a human', 'human', 'a person', 'person', 'man'] },
+    { q: 'What can you look through, walk through the frame of, but never actually walk through the door of?', a: ['a keyhole', 'keyhole'] },
+    { q: 'What season do you get when you jump on a trampoline?', a: ['spring', 'springtime'] },
+    { q: "What kind of tree grows in nearly every family, but you could never plant it in the ground?", a: ['a family tree', 'family tree'] },
+    { q: 'What travels constantly from the past into the future but never once stops moving?', a: ['time'] },
+    { q: "What kind of shower doesn't need a single drop of water, and falls from outer space?", a: ['a meteor shower', 'meteor shower'] },
+    { q: 'What alphabet is made entirely of dots and dashes?', a: ['morse code', 'morse'] },
+    { q: 'What can you make, but never see, hear, or touch, yet everyone hopes will come true?', a: ['a wish', 'wish'] },
+    { q: 'What kind of storm never produces a single drop of rain?', a: ['a brainstorm', 'brainstorm'] },
+    { q: 'What animal is always found standing at a baseball game?', a: ['a bat', 'bat'] },
+    { q: 'What do you call a bear that has lost all of its teeth?', a: ['a gummy bear', 'gummy bear'] },
+    { q: 'What has a tongue but can never say a single word?', a: ['a shoe', 'shoe'] },
+    { q: 'What animal always sleeps with its shoes on?', a: ['a horse', 'horse'] },
+    { q: 'What kind of dog keeps the best time, staying alert all night long?', a: ['a watchdog', 'watchdog'] },
+    { q: 'What insect can spell out an entire word using just one letter?', a: ['a bee', 'bee'] },
+    { q: 'What grows ears every summer but can never hear a single word?', a: ['corn'] },
+    { q: 'What bird can lift the heaviest loads on a construction site?', a: ['a crane', 'crane'] },
+    { q: 'What kind of "key" has fur, a tail, and loves to eat bananas?', a: ['a monkey', 'monkey'] },
+    { q: 'What has a bill but never once has to pay it?', a: ['a duck', 'duck'] },
+    { q: 'What has a comb on its head but never uses it to comb anything?', a: ['a rooster', 'rooster'] },
+    { q: "A father's son who is not your brother — who could this be?", a: ['you', 'me', 'yourself'] },
+    { q: 'What can you give away to someone else and still keep for yourself?', a: ['a smile', 'smile'] },
+    { q: 'What has eyes but cannot see, and grows quietly underground?', a: ['a potato', 'potato'] },
+    { q: 'What fruit is never found without its matching partner, sharing half its name with the word "two"?', a: ['a pear', 'pear'] },
+    { q: 'What goes into the water bright red, and comes out completely black?', a: ['a hot iron', 'hot iron', 'iron'] },
+    { q: 'What kind of nut sounds exactly like a sneeze?', a: ['a cashew', 'cashew'] },
+    { q: 'What has a wick, slowly melts as it works, and is often lit for a bit of light?', a: ['a candle', 'candle'] },
+    { q: 'What kind of "table" can you actually sit down and eat?', a: ['a vegetable', 'vegetable'] },
+    { q: 'What kind of dough do you play with, never bake, and definitely never eat?', a: ['play-doh', 'playdough', 'play dough'] },
+    { q: 'What has a skin but no flesh, no bones, and no blood at all?', a: ['a banana', 'banana'] },
+    { q: 'What has rings all over its body but is not jewelry, and can reveal its age if you count them?', a: ['a tree', 'tree'] },
+    { q: 'What vegetable is orange and sounds just like a talking bird?', a: ['a carrot', 'carrot'] },
+    { q: 'What kind of "egg" is a vegetable you would never crack into a pan?', a: ['an eggplant', 'eggplant'] },
+    { q: 'What part of your body has the most rhythm, hidden deep inside your ear?', a: ['an eardrum', 'eardrum'] },
+    { q: 'What gets bigger and bigger the more you take away from it?', a: ['a hole', 'hole'] },
+    { q: 'What has a screen, a keyboard, and a mouse, but never blinks and never runs anywhere?', a: ['a computer', 'computer'] },
+    { q: 'What has lots of buttons but no buttonholes, and controls your entire television?', a: ['a remote control', 'remote control', 'a remote', 'remote'] },
+    { q: 'What rings all day long, lives in your pocket, but has no fingers of its own?', a: ['a phone', 'phone', 'a cell phone', 'cell phone'] },
+    { q: 'What can you scroll through for hours without ever touching an actual scroll?', a: ['a phone', 'phone', 'social media'] },
+    { q: "What kind of ball can never be thrown, kicked, or bounced, yet you use it to see?", a: ['an eyeball', 'eyeball'] },
+    { q: 'What sport are waiters naturally talented at, simply because of what they do all day?', a: ['tennis'] },
+    { q: 'What race includes absolutely everyone, yet nobody ever truly wins it?', a: ['the human race', 'human race'] },
+    { q: 'What field has a diamond right in the middle of it, yet grows no crops at all?', a: ['a baseball field', 'baseball field'] },
+    { q: 'What has strings, a neck, and a body, yet has never once been alive?', a: ['a guitar', 'guitar'] },
+    { q: 'What can you see straight through, yet it still keeps the wind and rain outside?', a: ['glass'] },
+    { q: 'What is black and white, and gets read all over every single morning?', a: ['a newspaper', 'newspaper'] },
+    { q: 'What can spread through an entire room in seconds, without anyone lifting a finger, after a good joke?', a: ['laughter'] },
+    { q: 'What shape has no beginning, no end, and no corners at all?', a: ['a circle', 'circle'] },
+    { q: 'What takes years to build, only seconds to break, and is nearly impossible to fully repair?', a: ['trust'] },
+    { q: 'What kind of worker spends the whole day underground, digging for valuable resources?', a: ['a miner', 'miner'] },
+    { q: 'What kind of artist uses a needle full of ink instead of a paintbrush?', a: ['a tattoo artist', 'tattoo artist'] },
+    { q: 'What kind of worker gets paid to break buildings apart on purpose?', a: ['a demolition worker', 'demolition worker'] },
+    { q: 'What has craters all over it, yet has never been in a single battle?', a: ['the moon', 'moon'] },
+    { q: 'What planet is famous for the beautiful rings that circle all the way around it?', a: ['saturn'] },
+    { q: 'What has a spine and many pages, and can weigh down your backpack all school year long?', a: ['a textbook', 'textbook'] },
+    { q: 'What test does absolutely everything in life eventually have to pass, without ever opening a book?', a: ['the test of time', 'test of time'] },
+    { q: 'What can be given away completely, over and over, without ever once running out?', a: ['love'] },
+    { q: 'What grows the more it is shared, but does nothing at all sitting quietly alone in your head?', a: ['knowledge'] },
+    { q: 'What word has the longest distance between its first and last letters, because there is a "mile" in between them?', a: ['smiles'] },
+    { q: 'What starts with the letter P, ends with the letter E, and yet somehow contains thousands and thousands of letters?', a: ['a post office', 'post office'] },
+    { q: 'What five-letter word sounds exactly the same even after you take away its last four letters?', a: ['queue'] },
+    { q: 'What letter is waiting for you at the very end of every single rainbow?', a: ['the letter w', 'letter w', 'w'] },
+    { q: "If you have one, you want to share it. The moment you share it, you no longer really have it. What is it?", a: ['a secret', 'secret'] },
+    { q: 'The more you have of it, the less you are able to see. What is it?', a: ['darkness'] },
+    { q: 'What can be cut again and again, over and over, without ever actually getting any smaller?', a: ['a deck of cards', 'deck of cards', 'cards'] },
+    { q: 'What can be broken, yet breaking it is often something worth celebrating?', a: ['a record', 'record'] },
+    { q: 'What natural "coat" only ever forms on your car windows during freezing weather?', a: ['frost'] },
+    { q: 'What has a face and hands, yet no eyes or arms, and is usually strapped to your wrist?', a: ['a watch', 'watch'] },
+    { q: 'What can be driven, yet has no wheels and no engine at all, and is struck with a hammer?', a: ['a nail', 'nail'] },
+    { q: 'What gets "measured" at the end of every school term, yet weighs absolutely nothing?', a: ['your grades', 'grades'] },
+    { q: 'What has spinning blades but is never once used for cooking?', a: ['a fan', 'fan'] },
+    { q: 'What kind of "house" can a small, slow creature carry around on its very own back?', a: ['a shell', 'shell'] },
+    { q: 'What kind of "ladder" do people spend their whole career climbing, without ever using their feet?', a: ['the career ladder', 'career ladder'] },
+    { q: 'What kitchen tool is covered in tiny holes, yet is perfect for draining pasta without losing a single noodle?', a: ['a colander', 'colander', 'a strainer', 'strainer'] },
+    { q: 'What can be popped for fun at a party, is not a food, and is made of thin stretchy rubber and air?', a: ['a balloon', 'balloon'] },
+    { q: 'What single word can mean both a season of the year and the bouncy part inside an old mattress?', a: ['spring'] },
+    { q: 'What has a spout shaped like a beak, and whistles loudly the moment the water is ready?', a: ['a kettle', 'kettle'] },
+    { q: 'What object shows your own reflection back at you, yet feels cold to the touch and can shatter?', a: ['a mirror', 'mirror'] },
+    { q: 'What can you "draw" without ever needing a pencil, paper, or any artistic skill whatsoever?', a: ['a breath', 'breath'] },
+    { q: "What has a dial and a needle, yet no phone number, and tells you exactly how hot or cold it is?", a: ['a thermometer', 'thermometer'] },
+    { q: 'What device can clean an entire floor of dust and crumbs without you ever having to push it?', a: ['a robot vacuum', 'robot vacuum'] },
+    { q: "What kind of 'glass' measures time falling through sand, instead of ever being used to drink from?", a: ['an hourglass', 'hourglass'] },
+    { q: 'What device can capture a single moment forever, with nothing more than a click and a flash?', a: ['a camera', 'camera'] },
+    { q: 'What has a lens, is not a pair of glasses, and lets you see planets far away in the night sky?', a: ['a telescope', 'telescope'] },
+    { q: "What tool makes tiny things look much bigger, without ever actually changing their real size?", a: ['a magnifying glass', 'magnifying glass'] },
+    { q: 'What has a sharp blade, is worn on your feet, and lets you glide smoothly across ice?', a: ['an ice skate', 'ice skate', 'ice skates'] },
+    { q: 'What sport uses a feathered shuttlecock instead of a ball, hit back and forth with rackets?', a: ['badminton'] },
+    { q: 'What classic board game involves buying up streets and possibly landing yourself in jail?', a: ['monopoly'] },
+    { q: 'What has a shell you must crack open, yet no living creature ever crawls out of it?', a: ['a peanut', 'peanut', 'a nut', 'nut'] },
+    { q: 'What must be twisted off before you can take your very first sip of a fizzy soda?', a: ['a bottle cap', 'bottle cap'] },
+    { q: 'What animal has a long trunk, giant ears, and is famous for never forgetting anything?', a: ['an elephant', 'elephant'] },
+    { q: 'What animal hops everywhere, carries its babies in a pouch, and calls Australia home?', a: ['a kangaroo', 'kangaroo'] },
+    { q: "What animal can change the color of its skin to hide perfectly from predators?", a: ['a chameleon', 'chameleon'] },
+    { q: 'What has black and white stripes just like a zebra, but is painted flat on a city street?', a: ['a crosswalk', 'crosswalk'] },
+    { q: 'What insect lives inside a hive, makes something sweet, and can only sting a person once?', a: ['a bee', 'bee'] },
+    { q: 'What creature has eight long legs and spins delicate webs, but is not an octopus?', a: ['a spider', 'spider'] },
+    { q: "What bird can't fly a single inch, but is an excellent swimmer in icy waters?", a: ['a penguin', 'penguin'] },
+    { q: 'What desert animal can go a very long time without water, thanks to the hump on its back?', a: ['a camel', 'camel'] },
+    { q: "What African animal has a distinctive laugh, even though it isn't actually happy?", a: ['a hyena', 'hyena'] },
+    { q: 'What animal is famously called the "king of the jungle," even though it mostly lives on the grasslands?', a: ['a lion', 'lion'] },
+    { q: 'What European country is famous for being shaped almost exactly like a tall boot?', a: ['italy'] },
+    { q: 'What is the largest ocean on the entire planet?', a: ['the pacific ocean', 'pacific ocean', 'the pacific', 'pacific'] },
+    { q: 'What is the tallest mountain in the entire world, found in the Himalayas?', a: ['mount everest', 'everest'] },
+    { q: 'What is the smallest independent country in the entire world?', a: ['vatican city', 'the vatican', 'vatican'] },
+    { q: 'What spooky holiday do people carve faces into pumpkins for?', a: ['halloween'] },
+    { q: 'What holiday in the United States centers around a big turkey dinner and giving thanks?', a: ['thanksgiving'] },
+    { q: "What American holiday is celebrated with fireworks every year on the fourth of July?", a: ['independence day', 'the fourth of july', 'fourth of july', 'july 4th'] },
+    { q: 'What winter holiday features a decorated tree covered in lights and ornaments?', a: ['christmas'] },
+    { q: "What holiday do people celebrate at the stroke of midnight, welcoming a brand new year?", a: ["new year's eve", 'new years eve'] },
+    { q: 'What state of matter has no fixed shape and no fixed volume of its own?', a: ['a gas', 'gas'] },
+    { q: 'What invisible force is constantly pulling every object down toward the Earth?', a: ['gravity'] },
+    { q: 'What life-giving gas makes up about twenty-one percent of the air we breathe?', a: ['oxygen'] },
+    { q: 'What is the scientific name for a caterpillar transforming into a butterfly?', a: ['metamorphosis'] },
+    { q: 'What comes in pairs, protects your feet all day, and gets taken off right before bed?', a: ['shoes'] },
+    { q: 'What kind of "jacket" can a book wear, that a person would never put on?', a: ['a dust jacket', 'dust jacket', 'a book cover', 'book cover'] },
+    { q: 'What word contains twenty-six letters but is made up of only three syllables?', a: ['the alphabet', 'alphabet'] },
+    { q: 'I am a word of letters three; add two more and fewer there will be. What word am I?', a: ['few'] },
+    { q: 'What single letter marks both the end of everything, and the very last letter of the word "everything" itself?', a: ['the letter g', 'letter g', 'g'] },
+    { q: "What flows constantly from a faucet, can be still or rushing, and is essential to every living thing?", a: ['water'] },
+    { q: 'What comes out weekly or monthly, packed with glossy pages and advertisements, but is not a book?', a: ['a magazine', 'magazine'] },
+    { q: 'What is the only number whose name has the exact same number of letters as its value?', a: ['four', '4'] },
+    { q: 'What number is exactly one third of one thousand two hundred?', a: ['four hundred', '400'] },
+    { q: 'What number, when doubled, gives you eighteen?', a: ['nine', '9'] },
+    { q: "You have two coins that add up to thirty cents, and one of them is not a nickel. What are the two coins?", a: ['a quarter and a nickel', 'quarter and a nickel', 'a nickel and a quarter'] },
+    { q: 'What do you get when you add up every number from one to ten?', a: ['fifty-five', '55'] },
+    { q: 'What number comes exactly one after one hundred?', a: ['one hundred one', '101'] },
+    { q: 'What number is exactly half of one hundred?', a: ['fifty', '50'] },
+    { q: 'How many sides does a hexagon have?', a: ['six', '6'] },
+    { q: 'How many legs does a spider have?', a: ['eight', '8'] },
+    { q: 'How many continents are there on planet Earth?', a: ['seven', '7'] },
+    { q: 'How many distinct colors are traditionally counted in a rainbow?', a: ['seven', '7'] },
+    { q: 'How many strings does a standard guitar have?', a: ['six', '6'] },
+    { q: 'How many players from each team are on the field at once during a soccer match?', a: ['eleven', '11'] },
+    { q: 'How many hearts does an octopus have pumping inside it?', a: ['three', '3'] },
+    { q: 'How many minutes are there in one full day?', a: ['1440', 'fourteen forty', 'one thousand four hundred forty'] },
+    { q: 'How many degrees are there in a perfect right angle?', a: ['ninety', '90'] },
+    { q: 'What is the freezing point of water, measured in Fahrenheit?', a: ['thirty-two', '32'] },
+    { q: 'What planet is famously nicknamed the "Red Planet"?', a: ['mars'] },
+    { q: 'What is the largest planet in our entire solar system?', a: ['jupiter'] },
+    { q: 'What is the closest planet to the sun?', a: ['mercury'] },
+    { q: 'What galaxy do Earth and our entire solar system call home?', a: ['the milky way', 'milky way'] },
+    { q: 'What do bees collect from flowers before turning it into honey?', a: ['nectar'] },
+    { q: 'What is the hardest naturally occurring substance found on Earth?', a: ['diamond'] },
+    { q: 'What organ in your body is responsible for pumping blood everywhere it needs to go?', a: ['the heart', 'heart'] },
+    { q: 'What is the largest single organ in the entire human body?', a: ['the skin', 'skin'] },
+    { q: 'What is the name of the process plants use to turn sunlight into food?', a: ['photosynthesis'] },
+    { q: 'What tiny structure at the center of an atom holds its protons and neutrons?', a: ['the nucleus', 'nucleus'] },
+    { q: "What structure inside a cell is famously nicknamed the 'powerhouse of the cell' in every biology class?", a: ['the mitochondria', 'mitochondria'] },
+    { q: 'What icy continent is famously home to enormous colonies of penguins?', a: ['antarctica'] },
+    { q: "What is the largest hot desert in the entire world?", a: ['the sahara', 'sahara', 'the sahara desert', 'sahara desert'] },
+    { q: 'What is the tallest animal in the entire world, with an incredibly long neck?', a: ['a giraffe', 'giraffe'] },
+    { q: 'What is the fastest land animal in the entire world, capable of incredible bursts of speed?', a: ['a cheetah', 'cheetah'] },
+    { q: 'What is the largest mammal on planet Earth, living deep in the ocean?', a: ['a blue whale', 'blue whale', 'a whale', 'whale'] },
+    { q: 'What is the only mammal in the world truly capable of powered flight?', a: ['a bat', 'bat'] },
+    { q: 'What green fruit is mashed up to make guacamole?', a: ['an avocado', 'avocado'] },
+    { q: 'What Italian dish is made of flat baked dough topped with sauce and melted cheese?', a: ['pizza'] },
+    { q: 'What frozen dessert is often scooped into a crunchy cone on a hot summer day?', a: ['ice cream'] },
+    { q: 'What hot drink is made by brewing roasted beans in hot water, usually first thing in the morning?', a: ['coffee'] },
+    { q: 'What yellow fruit is a favorite snack of monkeys everywhere?', a: ['a banana', 'banana'] },
+    { q: "What red fruit is traditionally given to a teacher, and is said to keep the doctor away?", a: ['an apple', 'apple'] },
+    { q: 'What creamy spread is made almost entirely from crushed, roasted peanuts?', a: ['peanut butter'] },
+    { q: 'What white liquid comes from cows and is often poured straight over cereal?', a: ['milk'] },
+    { q: 'What kind of professional rushes toward danger to put out burning buildings?', a: ['a firefighter', 'firefighter'] },
+    { q: 'What kind of professional is trained to fly passenger airplanes?', a: ['a pilot', 'pilot'] },
+    { q: 'What kind of professional takes care of sick and injured animals?', a: ['a veterinarian', 'veterinarian', 'a vet', 'vet'] },
+    { q: 'What kind of professional is responsible for enforcing the law and catching criminals?', a: ['a police officer', 'police officer'] },
+    { q: 'What kind of professional bakes fresh bread and pastries for a living?', a: ['a baker', 'baker'] },
+    { q: 'What do you "break" with a total stranger to start a friendly conversation?', a: ['the ice'] },
+    { q: 'What are you told to let lie, instead of stirring up trouble from the past?', a: ['sleeping dogs', 'dogs'] },
+    { q: 'What does the early bird famously catch, according to the old saying?', a: ['the worm', 'worm'] },
+    { q: 'What do you accidentally "spill" when you let a secret slip out?', a: ['the beans', 'beans'] },
+    { q: 'What do you "hit" when you head off to bed and fall asleep quickly?', a: ['the hay', 'hay', 'the sack', 'sack'] },
+    { q: 'What has a little cap that pops off, yet the object underneath never had a head at all?', a: ['a pen', 'pen'] },
+    { q: "What kind of 'coat' does a bear wear every single day of its life, and can never take off?", a: ['fur'] },
+    { q: 'What is famously said to "fly" even though it has absolutely no wings?', a: ['time'] },
+    { q: 'What has numbers you spin to open a safe, yet never once tells you what time it is?', a: ['a combination lock', 'combination lock'] },
+    { q: 'What handheld device lights up the dark and usually runs on batteries?', a: ['a flashlight', 'flashlight'] },
+    { q: 'What has soft bristles, is not alive, and cleans your teeth twice a day?', a: ['a toothbrush', 'toothbrush'] },
+    { q: 'What white stick is used to write on a chalkboard, made from compressed calcium?', a: ['chalk'] },
+    { q: 'What small bent piece of metal holds loose sheets of paper together without any glue?', a: ['a paperclip', 'paperclip', 'a paper clip', 'paper clip'] },
+    { q: 'What sticky material comes on a roll and can join two pieces of paper together instantly?', a: ['tape'] },
+    { q: 'What tool tells you exactly how heavy something is when you step on it?', a: ['a scale', 'scale'] },
+    { q: 'What holds your pants up over your shoulders, without needing a belt at all?', a: ['suspenders'] },
+    { q: 'What hard shell protects your head while riding a bike or motorcycle?', a: ['a helmet', 'helmet'] },
+    { q: "What dark lenses protect your eyes from the sun's bright glare?", a: ['sunglasses'] },
+    { q: 'What warm hand covering keeps all four fingers together instead of separated?', a: ['mittens'] },
+    { q: 'What metal object, with unique grooves, is used to unlock a door?', a: ['a key', 'key'] },
+    { q: 'What can carry a whole stack of books on your back on the walk to school?', a: ['a backpack', 'backpack'] },
+    { q: 'What small pink or white tool removes pencil marks from paper?', a: ['an eraser', 'eraser'] },
+    { q: 'What small device is used to keep a pencil sharp and ready to write?', a: ['a pencil sharpener', 'pencil sharpener'] },
+    { q: 'What rooftop instrument spins to show you which way the wind is blowing?', a: ['a weather vane', 'weather vane'] },
+    { q: 'What glowing object lights up a room the instant electricity flows through its filament?', a: ['a light bulb', 'light bulb', 'a lightbulb', 'lightbulb'] },
+    { q: 'What can you flip to instantly turn a dark room bright again?', a: ['a light switch', 'light switch'] },
+    { q: 'What appliance keeps your food cold so it does not spoil?', a: ['a refrigerator', 'refrigerator', 'a fridge', 'fridge'] },
+    { q: 'What kitchen appliance heats up leftovers in just a couple of minutes using invisible waves?', a: ['a microwave', 'microwave'] },
+    { q: 'What appliance scrubs and rinses your dirty dishes so you never have to do it by hand?', a: ['a dishwasher', 'dishwasher'] },
+    { q: 'What machine spins your wet clothes around and around until they are dry?', a: ['a dryer', 'dryer'] },
+    { q: 'What machine washes your dirty clothes using water, soap, and a good spin cycle?', a: ['a washing machine', 'washing machine'] },
+    { q: 'What long-handled tool with bristles is used to sweep a floor clean?', a: ['a broom', 'broom'] },
+    { q: 'What household machine sucks up dust and crumbs from your carpet?', a: ['a vacuum', 'vacuum', 'a vacuum cleaner', 'vacuum cleaner'] },
+    { q: 'What tool has absorbent strings and is used to clean up spills from a floor?', a: ['a mop', 'mop'] },
+    { q: 'What container holds your garbage until it finally gets taken out?', a: ['a trash can', 'trash can', 'a garbage can', 'garbage can'] },
+    { q: 'What small hole in a front door lets you see exactly who is standing outside?', a: ['a peephole', 'peephole'] },
+    { q: 'What device rings loudly the moment someone presses the button by your front door?', a: ['a doorbell', 'doorbell'] },
+    { q: 'What loud device warns your whole house if it senses smoke in the air?', a: ['a smoke detector', 'smoke detector', 'a smoke alarm', 'smoke alarm'] },
+    { q: 'What large door at the front of a house opens automatically to let a car inside?', a: ['a garage door', 'garage door'] },
+    { q: 'What machine is pushed across a yard to keep the grass neatly trimmed?', a: ['a lawnmower', 'lawnmower', 'a lawn mower', 'lawn mower'] },
+    { q: 'What tool has a long handle and a flat metal blade, perfect for digging holes in the ground?', a: ['a shovel', 'shovel'] },
+    { q: 'What tool has two handles and two sharp blades, used to cut paper or fabric?', a: ['scissors', 'a pair of scissors'] }
+];
+
+function getTodayDateString() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function getDayOfYear(d) {
+    const start = new Date(d.getFullYear(), 0, 0);
+    return Math.floor((d - start) / 86400000);
+}
+
+function getTodaysRiddle() {
+    return RIDDLES[getDayOfYear(new Date()) % RIDDLES.length];
+}
+
+// Lowercase, trim, collapse whitespace, and drop a leading article / trailing
+// punctuation so "Echo", "echo.", and "an echo" are all treated the same.
+function normalizeRiddleAnswer(str) {
+    return str.trim().toLowerCase()
+        .replace(/[.!?]+$/, '')
+        .replace(/\s+/g, ' ')
+        .replace(/^(a|an|the)\s+/, '');
+}
+
+function checkRiddleAnswer(userAnswer, riddle) {
+    const normalizedUser = normalizeRiddleAnswer(userAnswer);
+    return riddle.a.some(accepted => normalizeRiddleAnswer(accepted) === normalizedUser);
+}
+
+function initRiddle() {
+    const today = getTodayDateString();
+    if (!state.riddle || state.riddle.date !== today) {
+        state.riddle = { date: today, solved: false };
+        saveState();
+    }
+    renderRiddle();
+}
+
+function renderRiddle() {
+    const riddle = getTodaysRiddle();
+    const qEl = document.getElementById('riddleQuestion');
+    const inputEl = document.getElementById('riddleAnswerInput');
+    const feedbackEl = document.getElementById('riddleFeedback');
+    const submitBtn = document.querySelector('#riddleForm button');
+    if (!qEl || !inputEl || !feedbackEl) return;
+
+    qEl.textContent = riddle.q;
+
+    const solved = state.riddle && state.riddle.solved;
+    inputEl.disabled = !!solved;
+    if (submitBtn) submitBtn.disabled = !!solved;
+
+    if (solved) {
+        inputEl.value = riddle.a[0];
+        feedbackEl.textContent = 'Solved! Come back tomorrow for a new riddle.';
+        feedbackEl.className = 'riddle-feedback correct';
+    } else {
+        inputEl.value = '';
+        feedbackEl.textContent = '';
+        feedbackEl.className = 'riddle-feedback';
+    }
+}
+
+function submitRiddleAnswer(e) {
+    e.preventDefault();
+    if (!state.riddle || state.riddle.solved) return;
+
+    const inputEl = document.getElementById('riddleAnswerInput');
+    const feedbackEl = document.getElementById('riddleFeedback');
+    const value = inputEl.value;
+    if (!value.trim()) return;
+
+    if (checkRiddleAnswer(value, getTodaysRiddle())) {
+        state.riddle.solved = true;
+        saveState();
+        feedbackEl.textContent = 'Correct! 🎉';
+        feedbackEl.className = 'riddle-feedback correct';
+        inputEl.disabled = true;
+        const submitBtn = document.querySelector('#riddleForm button');
+        if (submitBtn) submitBtn.disabled = true;
+        showToast('Riddle solved! 🧩', 'success');
+    } else {
+        feedbackEl.textContent = 'Not quite — try again!';
+        feedbackEl.className = 'riddle-feedback incorrect';
+    }
+}
+
+function toggleRiddleCollapsed() {
+    const widget = document.getElementById('riddleWidget');
+    if (widget) widget.classList.toggle('collapsed');
+}
+
 // Activity logic
 function addActivity(name, category) {
     // Avoid exact duplicate running names for UX clarity
@@ -1537,6 +2127,7 @@ function renderActivities() {
         `;
 
         grid.appendChild(card);
+        initCardDragging(act);
     });
 
     lucide.createIcons();

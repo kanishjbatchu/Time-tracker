@@ -189,13 +189,8 @@ body {
 .header-actions {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
-}
-
-.data-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
 }
 
 /* Dashboard Grid Layout */
@@ -1005,7 +1000,7 @@ body.light-theme .log-table tr:hover td {
     .left-pane {
         grid-template-columns: 1fr;
     }
-    .data-actions span {
+    .header-actions .swap-btn span {
         display: none; /* Icon-only on mobile for space */
     }
     .activities-grid {
@@ -2173,5 +2168,234 @@ body.light-theme .timer-progress {
 @media (prefers-reduced-motion: reduce) {
     .theme-decorations {
         display: none;
+    }
+}
+
+/* ============================================================
+   EDIT MODE
+   Dashboard cards, tracker cards, AND header buttons all swap places with
+   whatever they're dropped onto — one consistent drag-and-swap mechanic
+   everywhere. #btnToggleEditMode itself is never a swap participant (it
+   has no .swap-btn class), so it can never be moved or dropped onto —
+   it just always stays put, leftmost.
+   ============================================================ */
+
+/* Header "Edit Mode" toggle button — emerald accent, filled when active.
+   Text-only (no icon), sized like the other labeled header buttons. */
+#btnToggleEditMode {
+    border-color: var(--success);
+    color: var(--success);
+}
+
+#btnToggleEditMode:hover {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: var(--success);
+    color: var(--success);
+}
+
+#btnToggleEditMode.active {
+    background: var(--success);
+    border-color: var(--success);
+    color: #fff;
+}
+
+/* #activitiesGrid needs to be a positioning context as the containing block
+   for the Riddle of the Day widget. */
+.activities-grid {
+    position: relative;
+}
+
+/* Draggable items get a dashed "grab me" outline only while editing. */
+body.edit-mode-active .swap-btn,
+body.edit-mode-active .activity-card,
+body.edit-mode-active .dashboard-card {
+    cursor: grab;
+    outline: 2px dashed var(--success);
+    outline-offset: 3px;
+}
+
+body.edit-mode-active .swap-btn:active,
+body.edit-mode-active .activity-card:active,
+body.edit-mode-active .dashboard-card:active {
+    cursor: grabbing;
+}
+
+/* A card actively being dragged (swap mode) — follows the pointer via
+   transform, stays in normal flow otherwise, so no layout math is needed. */
+.dragging-swap {
+    z-index: 50;
+    opacity: 0.9;
+    cursor: grabbing !important;
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.4);
+}
+
+/* The card currently under the dragged one — highlighted as the swap target */
+.swap-target {
+    outline: 3px solid var(--success) !important;
+    outline-offset: -3px;
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.2);
+}
+
+/* ============================================================
+   RIDDLE OF THE DAY
+   ============================================================ */
+
+/* Anchored inside the tracker cards area (#activitiesGrid), inset from its
+   corner — not pinned to the page's actual top-right corner. */
+.riddle-widget {
+    position: absolute;
+    top: 0.85rem;
+    right: 0.85rem;
+    width: 280px;
+    max-width: calc(100% - 1.7rem);
+    z-index: 20;
+    padding: 1rem 1.1rem;
+    animation: slideIn 0.3s ease;
+}
+
+.riddle-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.riddle-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+.riddle-title i {
+    width: 16px;
+    height: 16px;
+    color: var(--primary);
+}
+
+.riddle-toggle {
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+}
+
+.riddle-toggle:hover {
+    background: var(--bg-glass-hover);
+    color: var(--text-main);
+}
+
+.riddle-toggle i {
+    transition: transform var(--transition-fast);
+}
+
+.riddle-widget.collapsed .riddle-toggle i {
+    transform: rotate(180deg);
+}
+
+.riddle-body {
+    margin-top: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.riddle-widget.collapsed .riddle-body {
+    display: none;
+}
+
+.riddle-question {
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--text-main);
+}
+
+.riddle-form {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.riddle-form input {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-primary);
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    color: var(--text-main);
+    padding: 0.55rem 0.75rem;
+    font-size: 0.85rem;
+    outline: none;
+    transition: all var(--transition-fast);
+}
+
+body.light-theme .riddle-form input {
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.riddle-form input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+.riddle-form input:disabled {
+    opacity: 0.6;
+}
+
+.btn-icon-sm {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    background: var(--primary-gradient);
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+}
+
+.btn-icon-sm:hover {
+    transform: translateY(-1px);
+}
+
+.btn-icon-sm:disabled {
+    opacity: 0.5;
+    cursor: default;
+    transform: none;
+}
+
+.riddle-feedback {
+    font-size: 0.78rem;
+    font-weight: 600;
+    min-height: 1.1rem;
+}
+
+.riddle-feedback.correct {
+    color: var(--success);
+}
+
+.riddle-feedback.incorrect {
+    color: var(--accent);
+}
+
+@media (max-width: 768px) {
+    .riddle-widget {
+        top: 0.5rem;
+        right: 0.5rem;
+        width: 240px;
     }
 }

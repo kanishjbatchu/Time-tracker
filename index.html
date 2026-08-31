@@ -203,13 +203,8 @@ body {
 .header-actions {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
-}
-
-.data-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
 }
 
 /* Dashboard Grid Layout */
@@ -1019,7 +1014,7 @@ body.light-theme .log-table tr:hover td {
     .left-pane {
         grid-template-columns: 1fr;
     }
-    .data-actions span {
+    .header-actions .swap-btn span {
         display: none; /* Icon-only on mobile for space */
     }
     .activities-grid {
@@ -2190,6 +2185,235 @@ body.light-theme .timer-progress {
     }
 }
 
+/* ============================================================
+   EDIT MODE
+   Dashboard cards, tracker cards, AND header buttons all swap places with
+   whatever they're dropped onto — one consistent drag-and-swap mechanic
+   everywhere. #btnToggleEditMode itself is never a swap participant (it
+   has no .swap-btn class), so it can never be moved or dropped onto —
+   it just always stays put, leftmost.
+   ============================================================ */
+
+/* Header "Edit Mode" toggle button — emerald accent, filled when active.
+   Text-only (no icon), sized like the other labeled header buttons. */
+#btnToggleEditMode {
+    border-color: var(--success);
+    color: var(--success);
+}
+
+#btnToggleEditMode:hover {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: var(--success);
+    color: var(--success);
+}
+
+#btnToggleEditMode.active {
+    background: var(--success);
+    border-color: var(--success);
+    color: #fff;
+}
+
+/* #activitiesGrid needs to be a positioning context as the containing block
+   for the Riddle of the Day widget. */
+.activities-grid {
+    position: relative;
+}
+
+/* Draggable items get a dashed "grab me" outline only while editing. */
+body.edit-mode-active .swap-btn,
+body.edit-mode-active .activity-card,
+body.edit-mode-active .dashboard-card {
+    cursor: grab;
+    outline: 2px dashed var(--success);
+    outline-offset: 3px;
+}
+
+body.edit-mode-active .swap-btn:active,
+body.edit-mode-active .activity-card:active,
+body.edit-mode-active .dashboard-card:active {
+    cursor: grabbing;
+}
+
+/* A card actively being dragged (swap mode) — follows the pointer via
+   transform, stays in normal flow otherwise, so no layout math is needed. */
+.dragging-swap {
+    z-index: 50;
+    opacity: 0.9;
+    cursor: grabbing !important;
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.4);
+}
+
+/* The card currently under the dragged one — highlighted as the swap target */
+.swap-target {
+    outline: 3px solid var(--success) !important;
+    outline-offset: -3px;
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.2);
+}
+
+/* ============================================================
+   RIDDLE OF THE DAY
+   ============================================================ */
+
+/* Anchored inside the tracker cards area (#activitiesGrid), inset from its
+   corner — not pinned to the page's actual top-right corner. */
+.riddle-widget {
+    position: absolute;
+    top: 0.85rem;
+    right: 0.85rem;
+    width: 280px;
+    max-width: calc(100% - 1.7rem);
+    z-index: 20;
+    padding: 1rem 1.1rem;
+    animation: slideIn 0.3s ease;
+}
+
+.riddle-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.riddle-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+.riddle-title i {
+    width: 16px;
+    height: 16px;
+    color: var(--primary);
+}
+
+.riddle-toggle {
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+}
+
+.riddle-toggle:hover {
+    background: var(--bg-glass-hover);
+    color: var(--text-main);
+}
+
+.riddle-toggle i {
+    transition: transform var(--transition-fast);
+}
+
+.riddle-widget.collapsed .riddle-toggle i {
+    transform: rotate(180deg);
+}
+
+.riddle-body {
+    margin-top: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.riddle-widget.collapsed .riddle-body {
+    display: none;
+}
+
+.riddle-question {
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--text-main);
+}
+
+.riddle-form {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.riddle-form input {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-primary);
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    color: var(--text-main);
+    padding: 0.55rem 0.75rem;
+    font-size: 0.85rem;
+    outline: none;
+    transition: all var(--transition-fast);
+}
+
+body.light-theme .riddle-form input {
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.riddle-form input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+.riddle-form input:disabled {
+    opacity: 0.6;
+}
+
+.btn-icon-sm {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    background: var(--primary-gradient);
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+}
+
+.btn-icon-sm:hover {
+    transform: translateY(-1px);
+}
+
+.btn-icon-sm:disabled {
+    opacity: 0.5;
+    cursor: default;
+    transform: none;
+}
+
+.riddle-feedback {
+    font-size: 0.78rem;
+    font-weight: 600;
+    min-height: 1.1rem;
+}
+
+.riddle-feedback.correct {
+    color: var(--success);
+}
+
+.riddle-feedback.incorrect {
+    color: var(--accent);
+}
+
+@media (max-width: 768px) {
+    .riddle-widget {
+        top: 0.5rem;
+        right: 0.5rem;
+        width: 240px;
+    }
+}
+
 </style>
 <!-- INLINE-CSS:END -->
 </head>
@@ -2215,32 +2439,33 @@ body.light-theme .timer-progress {
             </div>
             
             <div class="header-actions">
-                <button id="btnToggleSettings" class="btn-icon" aria-label="Settings" data-tooltip="Settings">
+                <button id="btnToggleEditMode" class="btn btn-secondary btn-sm">
+                    <span>Edit Mode</span>
+                </button>
+                <button id="btnToggleSettings" class="btn-icon swap-btn" aria-label="Settings" data-tooltip="Settings">
                     <i data-lucide="settings"></i>
                 </button>
-                <div class="data-actions">
-                    <button id="btnSave" class="btn btn-secondary btn-sm" title="Save a full JSON backup of your activities and logs">
-                        <i data-lucide="save"></i>
-                        <span>Save JSON</span>
-                    </button>
-                    <button id="btnImport" class="btn btn-secondary btn-sm" title="Upload a JSON backup to restore your data">
-                        <i data-lucide="upload"></i>
-                        <span>Upload JSON</span>
-                    </button>
-                    <input type="file" id="importFile" accept=".json" style="display: none;">
-                    <button id="btnToggleTimer" class="btn btn-secondary btn-sm" title="Set a countdown timer">
-                        <i data-lucide="timer"></i>
-                        <span>Timer</span>
-                    </button>
-                    <button id="btnToggleAlarm" class="btn btn-secondary btn-sm" title="Create an alarm">
-                        <i data-lucide="alarm-clock"></i>
-                        <span>Alarm</span>
-                    </button>
-                    <button id="btnClear" class="btn btn-danger btn-sm" title="Clear all data">
-                        <i data-lucide="trash-2"></i>
-                        <span>Clear All</span>
-                    </button>
-                </div>
+                <button id="btnSave" class="btn btn-secondary btn-sm swap-btn" title="Save a full JSON backup of your activities and logs">
+                    <i data-lucide="save"></i>
+                    <span>Save JSON</span>
+                </button>
+                <button id="btnImport" class="btn btn-secondary btn-sm swap-btn" title="Upload a JSON backup to restore your data">
+                    <i data-lucide="upload"></i>
+                    <span>Upload JSON</span>
+                </button>
+                <input type="file" id="importFile" accept=".json" style="display: none;">
+                <button id="btnToggleTimer" class="btn btn-secondary btn-sm swap-btn" title="Set a countdown timer">
+                    <i data-lucide="timer"></i>
+                    <span>Timer</span>
+                </button>
+                <button id="btnToggleAlarm" class="btn btn-secondary btn-sm swap-btn" title="Create an alarm">
+                    <i data-lucide="alarm-clock"></i>
+                    <span>Alarm</span>
+                </button>
+                <button id="btnClear" class="btn btn-danger btn-sm swap-btn" title="Clear all data">
+                    <i data-lucide="trash-2"></i>
+                    <span>Clear All</span>
+                </button>
             </div>
         </header>
 
@@ -2453,6 +2678,29 @@ body.light-theme .timer-progress {
                     </div>
                     
                     <div id="activitiesGrid" class="activities-grid">
+                        <!-- Riddle of the Day — anchored to the top-right of the tracker card area, changes daily, answer checked case-insensitively -->
+                        <div id="riddleWidget" class="riddle-widget glass-panel">
+                            <div class="riddle-header" id="riddleHeader">
+                                <span class="riddle-title">
+                                    <i data-lucide="puzzle"></i>
+                                    <span>Riddle of the Day</span>
+                                </span>
+                                <button type="button" class="riddle-toggle" id="riddleToggle" aria-label="Collapse riddle" data-tooltip="Collapse">
+                                    <i data-lucide="chevron-up"></i>
+                                </button>
+                            </div>
+                            <div class="riddle-body" id="riddleBody">
+                                <p class="riddle-question" id="riddleQuestion"></p>
+                                <form class="riddle-form" id="riddleForm">
+                                    <input type="text" id="riddleAnswerInput" placeholder="Your answer..." autocomplete="off">
+                                    <button type="submit" class="btn-icon btn-icon-sm" aria-label="Submit answer">
+                                        <i data-lucide="arrow-right"></i>
+                                    </button>
+                                </form>
+                                <p class="riddle-feedback" id="riddleFeedback"></p>
+                            </div>
+                        </div>
+
                         <!-- Dynamic Activity Cards Loaded Here -->
                         <div class="empty-state" id="emptyState">
                             <div class="empty-icon-wrapper">
@@ -2465,7 +2713,7 @@ body.light-theme .timer-progress {
                 </div>
 
                 <!-- Session Logs Section -->
-                <div class="dashboard-card glass-panel log-section">
+                <div class="dashboard-card glass-panel log-section" id="logHistoryCard">
                     <div class="section-header">
                         <h2 class="card-title">
                             <i data-lucide="history" class="title-icon text-secondary"></i>
@@ -2662,7 +2910,10 @@ let state = {
     accentColor: 'violet',
     specialTheme: 'default',
     customBackgroundImage: null, // data URL of a user-uploaded PNG/JPG, resized/compressed on upload
-    customBackgroundIsDark: null // sampled average brightness of the uploaded photo, for 'auto' theme mode
+    customBackgroundIsDark: null, // sampled average brightness of the uploaded photo, for 'auto' theme mode
+    headerButtonOrder: [],  // [id, ...] — saved swap order of header buttons from Edit Mode
+    dashboardCardOrder: [], // [{id, pane}] — saved swap order of dashboard cards from Edit Mode
+    riddle: null          // { date: 'YYYY-MM-DD', solved: boolean } — today's Riddle of the Day progress
 };
 
 // Accent color presets — each overrides --primary / --primary-glow / --primary-gradient
@@ -2804,6 +3055,11 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     initTheme();
     initThemeType();
+    applyDashboardCardOrder();
+    applyHeaderButtonOrder();
+    initHeaderButtonDragging();
+    initDashboardCardDragging();
+    initRiddle();
     populateRingtoneOptions();
     setDefaultAlarmDateTime();
     prepareRingtones(); // render ringtone WAVs up front so alarms can ring instantly
@@ -2844,6 +3100,18 @@ function setupEventListeners() {
     // Reset Logs Only
     const btnClearLogs = document.getElementById('btnClearLogs');
     btnClearLogs.addEventListener('click', resetLogsOnly);
+
+    // Edit Mode: swap dashboard/tracker cards, drag header buttons freely
+    const btnToggleEditMode = document.getElementById('btnToggleEditMode');
+    if (btnToggleEditMode) btnToggleEditMode.addEventListener('click', toggleEditMode);
+    blockClicksDuringEditMode(document.querySelector('.dashboard-grid'));
+    blockClicksDuringEditMode(document.querySelector('.header-actions'), '#btnToggleEditMode');
+
+    // Riddle of the Day: answer form + collapse toggle
+    const riddleForm = document.getElementById('riddleForm');
+    if (riddleForm) riddleForm.addEventListener('submit', submitRiddleAnswer);
+    const riddleHeader = document.getElementById('riddleHeader');
+    if (riddleHeader) riddleHeader.addEventListener('click', toggleRiddleCollapsed);
 
     // Settings: header button opens the settings modal; the X button and
     // clicking the dimmed backdrop both close it.
@@ -2952,6 +3220,8 @@ function loadState() {
                 ? !!state.customBackgroundImage
                 : !!THEME_TYPES[state.specialTheme];
             if (!specialThemeValid) state.specialTheme = 'default';
+            if (!Array.isArray(state.headerButtonOrder)) state.headerButtonOrder = [];
+            if (!Array.isArray(state.dashboardCardOrder)) state.dashboardCardOrder = [];
             delete state.notes; // drop any leftover data from the removed notepad
             // Alarms are session-only: they are created via the "Set Alarm" button
             // and never restored from storage, so none "load" on page load.
@@ -3747,6 +4017,328 @@ function buildMusicDecorations() {
     return items;
 }
 
+// =======================================================================
+// EDIT MODE
+// - Dashboard cards (Create Activity, Alarm, Timer, Analytics, Session Log)
+//   and tracker cards (individual activities) SWAP places with whatever
+//   card they're dropped onto.
+// - Header buttons still drag freely within their zone, clamped so
+//   #btnToggleEditMode is always the leftmost element.
+// =======================================================================
+
+function toggleEditMode() {
+    const active = !document.body.classList.contains('edit-mode-active');
+    document.body.classList.toggle('edit-mode-active', active);
+    const btn = document.getElementById('btnToggleEditMode');
+    if (btn) btn.classList.toggle('active', active);
+    showToast(active ? 'Edit mode on — drag cards and buttons to rearrange' : 'Edit mode off', 'info');
+}
+
+// Swallow clicks inside `container` while edit mode is active, in a capturing
+// listener so it runs before any inner button's own click handler — otherwise
+// dropping a drag (a pointerdown+pointerup with little movement) can also fire
+// a native click, e.g. starting a stopwatch or exporting JSON by accident.
+// `allowSelector`, if given, lets clicks through for matching targets (used so
+// the Edit Mode button itself can still be clicked to turn editing back off).
+function blockClicksDuringEditMode(container, allowSelector) {
+    if (!container) return;
+    container.addEventListener('click', (e) => {
+        if (!document.body.classList.contains('edit-mode-active')) return;
+        if (allowSelector && e.target.closest(allowSelector)) return;
+        e.stopPropagation();
+        e.preventDefault();
+    }, true);
+}
+
+// Header buttons: swap with whatever button they're dropped onto, exactly
+// like dashboard/tracker cards. #btnToggleEditMode has no .swap-btn class, so
+// it's never a valid drag source or drop target — it just always stays put.
+function initHeaderButtonDragging() {
+    document.querySelectorAll('.header-actions .swap-btn').forEach(btn => {
+        makeSwappable(btn, '.swap-btn', (draggedEl, targetEl) => {
+            swapElements(draggedEl, targetEl);
+            saveHeaderButtonOrder();
+        });
+    });
+}
+
+function saveHeaderButtonOrder() {
+    const buttons = document.querySelectorAll('.header-actions .swap-btn');
+    state.headerButtonOrder = Array.from(buttons).map(el => el.id);
+    saveState();
+}
+
+// Re-apply a saved header button order on load — appendChild on an existing
+// node relocates it, so processing ids in saved order rebuilds the sequence.
+// #btnToggleEditMode and the hidden #importFile input are never touched, so
+// they stay exactly where they started (Edit Mode leftmost).
+function applyHeaderButtonOrder() {
+    if (!state.headerButtonOrder || !state.headerButtonOrder.length) return;
+    const container = document.querySelector('.header-actions');
+    if (!container) return;
+    state.headerButtonOrder.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) container.appendChild(el);
+    });
+}
+
+// Make `el` swap-draggable: dragging it onto another element matching
+// `groupSelector` (via onSwap(draggedEl, targetEl)) exchanges their places.
+// Used for dashboard cards and tracker cards — unlike header buttons, these
+// don't support free positioning, only swapping with another card.
+function makeSwappable(el, groupSelector, onSwap) {
+    if (!el) return;
+
+    el.addEventListener('pointerdown', (e) => {
+        if (!document.body.classList.contains('edit-mode-active')) return;
+        if (e.button !== 0) return;
+        e.preventDefault();
+
+        const startX = e.clientX;
+        const startY = e.clientY;
+        let dragging = false;
+        let target = null;
+
+        function onMove(ev) {
+            if (!dragging) {
+                // Small threshold so a plain click doesn't count as a drag.
+                if (Math.abs(ev.clientX - startX) < 4 && Math.abs(ev.clientY - startY) < 4) return;
+                dragging = true;
+                el.classList.add('dragging-swap');
+            }
+
+            el.style.transform = `translate(${ev.clientX - startX}px, ${ev.clientY - startY}px)`;
+
+            // Hide `el` from hit-testing so elementFromPoint can see what's underneath it.
+            el.style.pointerEvents = 'none';
+            const under = document.elementFromPoint(ev.clientX, ev.clientY);
+            el.style.pointerEvents = '';
+
+            const candidateEl = under ? under.closest(groupSelector) : null;
+            const candidate = (candidateEl && candidateEl !== el) ? candidateEl : null;
+
+            if (target && target !== candidate) target.classList.remove('swap-target');
+            if (candidate) candidate.classList.add('swap-target');
+            target = candidate;
+        }
+
+        function onUp() {
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            el.style.transform = '';
+            el.classList.remove('dragging-swap');
+            if (target) {
+                target.classList.remove('swap-target');
+                onSwap(el, target);
+            }
+        }
+
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+    });
+}
+
+// Swap two arbitrary DOM nodes' positions, regardless of whether they share a
+// parent or are adjacent siblings.
+function swapElements(a, b) {
+    if (!a || !b || a === b) return;
+    const placeholder = document.createComment('swap-placeholder');
+    a.parentNode.insertBefore(placeholder, a);
+    b.parentNode.insertBefore(a, b);
+    placeholder.parentNode.insertBefore(b, placeholder);
+    placeholder.remove();
+}
+
+// Dashboard cards (Create Activity, Alarm, Timer, Analytics, Session Log):
+// swap DOM position with whatever card they're dropped onto, and persist the
+// resulting order (which pane each card ends up in, and in what sequence).
+function initDashboardCardDragging() {
+    document.querySelectorAll('.dashboard-card').forEach(card => {
+        makeSwappable(card, '.dashboard-card', (draggedEl, targetEl) => {
+            swapElements(draggedEl, targetEl);
+            saveDashboardCardOrder();
+        });
+    });
+}
+
+function saveDashboardCardOrder() {
+    const cards = document.querySelectorAll('.left-pane .dashboard-card, .right-pane .dashboard-card');
+    state.dashboardCardOrder = Array.from(cards).map(el => ({
+        id: el.id,
+        pane: el.closest('.left-pane') ? 'left' : 'right'
+    }));
+    saveState();
+}
+
+// Re-apply a saved dashboard card order on load, by re-appending each card
+// (in saved order) into its recorded pane — appendChild on an existing node
+// relocates it, so processing entries in order rebuilds the exact sequence.
+function applyDashboardCardOrder() {
+    if (!state.dashboardCardOrder || !state.dashboardCardOrder.length) return;
+    const leftPane = document.querySelector('.left-pane');
+    const rightPane = document.querySelector('.right-pane');
+    state.dashboardCardOrder.forEach(({ id, pane }) => {
+        const el = document.getElementById(id);
+        const container = pane === 'left' ? leftPane : rightPane;
+        if (el && container) container.appendChild(el);
+    });
+}
+
+// Tracker (activity) cards: swap with whatever card they're dropped onto by
+// exchanging their positions in state.activities. Called once per card each
+// time renderActivities() (re)builds the grid.
+function initCardDragging(act) {
+    const el = document.getElementById(`card-${act.id}`);
+    if (!el) return;
+    makeSwappable(el, '.activity-card', (draggedEl, targetEl) => {
+        swapActivityOrder(draggedEl.id.replace('card-', ''), targetEl.id.replace('card-', ''));
+    });
+}
+
+function swapActivityOrder(idA, idB) {
+    if (idA === idB) return;
+    const idxA = state.activities.findIndex(a => a.id === idA);
+    const idxB = state.activities.findIndex(a => a.id === idB);
+    if (idxA === -1 || idxB === -1) return;
+    const tmp = state.activities[idxA];
+    state.activities[idxA] = state.activities[idxB];
+    state.activities[idxB] = tmp;
+    saveState();
+    renderActivities();
+}
+
+// =======================================================================
+// RIDDLE OF THE DAY — a new riddle each calendar day (deterministic, so
+// everyone sees the same one), answer checked case-insensitively.
+// =======================================================================
+
+const RIDDLES = [
+    { q: "What has keys but can't open locks?", a: ['a piano', 'piano'] },
+    { q: 'What has a face and two hands but no arms or legs?', a: ['a clock', 'clock'] },
+    { q: 'What has to be broken before you can use it?', a: ['an egg', 'egg'] },
+    { q: 'I speak without a mouth and hear without ears. I have no body, but I come alive with wind. What am I?', a: ['an echo', 'echo'] },
+    { q: 'The more you take, the more you leave behind. What am I?', a: ['footsteps', 'footprints'] },
+    { q: 'What month of the year has 28 days?', a: ['all of them', 'all months', 'every month', 'all'] },
+    { q: "What has one eye but can't see?", a: ['a needle', 'needle'] },
+    { q: 'What can travel around the world while staying in a corner?', a: ['a stamp', 'stamp'] },
+    { q: 'What gets wetter as it dries?', a: ['a towel', 'towel'] },
+    { q: "What has many teeth but can't bite?", a: ['a comb', 'comb'] },
+    { q: 'What has a neck but no head?', a: ['a bottle', 'bottle'] },
+    { q: 'What goes up but never comes down?', a: ['your age', 'age'] },
+    { q: "What has hands but can't clap?", a: ['a clock', 'clock'] },
+    { q: 'What is full of holes but still holds water?', a: ['a sponge', 'sponge'] },
+    { q: 'What can you catch but not throw?', a: ['a cold', 'cold'] },
+    { q: 'What has a bottom at the top?', a: ['your legs', 'legs'] },
+    { q: 'What runs but never walks, has a mouth but never talks?', a: ['a river', 'river'] },
+    { q: 'What invention lets you look right through a wall?', a: ['a window', 'window'] },
+    { q: "What has legs but doesn't walk?", a: ['a table', 'table', 'a chair', 'chair'] },
+    { q: 'What can fill a room but takes up no space?', a: ['light'] },
+    { q: 'What comes once in a minute, twice in a moment, but never in a thousand years?', a: ['the letter m', 'letter m', 'm'] },
+    { q: 'What has an eye but cannot see, and a bed but never sleeps?', a: ['a river', 'river'] },
+    { q: 'What kind of room has no doors or windows?', a: ['a mushroom', 'mushroom'] },
+    { q: 'What begins with T, ends with T, and has T in it?', a: ['a teapot', 'teapot'] },
+    { q: 'What can you break without touching it?', a: ['a promise'] },
+    { q: 'What has a head, a tail, is brown, and has no legs?', a: ['a penny', 'penny', 'a coin', 'coin'] },
+    { q: 'What is easy to get into but hard to get out of?', a: ['trouble'] },
+    { q: "What is always in front of you but can't be seen?", a: ['the future', 'future'] },
+    { q: 'What has one head, one foot, and four legs?', a: ['a bed', 'bed'] },
+    { q: 'What is so fragile that saying its name breaks it?', a: ['silence'] },
+    { q: 'What can you keep after giving it to someone?', a: ['your word', 'word'] },
+    { q: 'What has words but never speaks?', a: ['a book', 'book'] }
+];
+
+function getTodayDateString() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function getDayOfYear(d) {
+    const start = new Date(d.getFullYear(), 0, 0);
+    return Math.floor((d - start) / 86400000);
+}
+
+function getTodaysRiddle() {
+    return RIDDLES[getDayOfYear(new Date()) % RIDDLES.length];
+}
+
+// Lowercase, trim, collapse whitespace, and drop a leading article / trailing
+// punctuation so "Echo", "echo.", and "an echo" are all treated the same.
+function normalizeRiddleAnswer(str) {
+    return str.trim().toLowerCase()
+        .replace(/[.!?]+$/, '')
+        .replace(/\s+/g, ' ')
+        .replace(/^(a|an|the)\s+/, '');
+}
+
+function checkRiddleAnswer(userAnswer, riddle) {
+    const normalizedUser = normalizeRiddleAnswer(userAnswer);
+    return riddle.a.some(accepted => normalizeRiddleAnswer(accepted) === normalizedUser);
+}
+
+function initRiddle() {
+    const today = getTodayDateString();
+    if (!state.riddle || state.riddle.date !== today) {
+        state.riddle = { date: today, solved: false };
+        saveState();
+    }
+    renderRiddle();
+}
+
+function renderRiddle() {
+    const riddle = getTodaysRiddle();
+    const qEl = document.getElementById('riddleQuestion');
+    const inputEl = document.getElementById('riddleAnswerInput');
+    const feedbackEl = document.getElementById('riddleFeedback');
+    const submitBtn = document.querySelector('#riddleForm button');
+    if (!qEl || !inputEl || !feedbackEl) return;
+
+    qEl.textContent = riddle.q;
+
+    const solved = state.riddle && state.riddle.solved;
+    inputEl.disabled = !!solved;
+    if (submitBtn) submitBtn.disabled = !!solved;
+
+    if (solved) {
+        inputEl.value = riddle.a[0];
+        feedbackEl.textContent = 'Solved! Come back tomorrow for a new riddle.';
+        feedbackEl.className = 'riddle-feedback correct';
+    } else {
+        inputEl.value = '';
+        feedbackEl.textContent = '';
+        feedbackEl.className = 'riddle-feedback';
+    }
+}
+
+function submitRiddleAnswer(e) {
+    e.preventDefault();
+    if (!state.riddle || state.riddle.solved) return;
+
+    const inputEl = document.getElementById('riddleAnswerInput');
+    const feedbackEl = document.getElementById('riddleFeedback');
+    const value = inputEl.value;
+    if (!value.trim()) return;
+
+    if (checkRiddleAnswer(value, getTodaysRiddle())) {
+        state.riddle.solved = true;
+        saveState();
+        feedbackEl.textContent = 'Correct! 🎉';
+        feedbackEl.className = 'riddle-feedback correct';
+        inputEl.disabled = true;
+        const submitBtn = document.querySelector('#riddleForm button');
+        if (submitBtn) submitBtn.disabled = true;
+        showToast('Riddle solved! 🧩', 'success');
+    } else {
+        feedbackEl.textContent = 'Not quite — try again!';
+        feedbackEl.className = 'riddle-feedback incorrect';
+    }
+}
+
+function toggleRiddleCollapsed() {
+    const widget = document.getElementById('riddleWidget');
+    if (widget) widget.classList.toggle('collapsed');
+}
+
 // Activity logic
 function addActivity(name, category) {
     // Avoid exact duplicate running names for UX clarity
@@ -4190,6 +4782,7 @@ function renderActivities() {
         `;
 
         grid.appendChild(card);
+        initCardDragging(act);
     });
 
     lucide.createIcons();
