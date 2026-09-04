@@ -12,7 +12,8 @@ let state = {
     customBackgroundIsDark: null, // sampled average brightness of the uploaded photo, for 'auto' theme mode
     headerButtonOrder: [],  // [id, ...] — saved swap order of header buttons from Edit Mode
     dashboardCardOrder: [], // [{id, pane}] — saved swap order of dashboard cards from Edit Mode
-    riddle: null          // { date: 'YYYY-MM-DD', solved: boolean } — today's Riddle of the Day progress
+    riddle: null,          // { date: 'YYYY-MM-DD', solved: boolean } — today's Riddle of the Day progress
+    userName: ''           // set in Settings, used by the greeting banner below the dashboard
 };
 
 // Accent color presets — each overrides --primary / --primary-glow / --primary-gradient
@@ -159,6 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initHeaderButtonDragging();
     initDashboardCardDragging();
     initRiddle();
+    initGreeting();
     populateRingtoneOptions();
     setDefaultAlarmDateTime();
     prepareRingtones(); // render ringtone WAVs up front so alarms can ring instantly
@@ -211,6 +213,10 @@ function setupEventListeners() {
     if (riddleForm) riddleForm.addEventListener('submit', submitRiddleAnswer);
     const riddleHeader = document.getElementById('riddleHeader');
     if (riddleHeader) riddleHeader.addEventListener('click', toggleRiddleCollapsed);
+
+    // Greeting banner: name set in Settings updates the greeting live
+    const userNameInput = document.getElementById('userNameInput');
+    if (userNameInput) userNameInput.addEventListener('input', (e) => setUserName(e.target.value));
 
     // Settings: header button opens the settings modal; the X button and
     // clicking the dimmed backdrop both close it.
@@ -321,6 +327,7 @@ function loadState() {
             if (!specialThemeValid) state.specialTheme = 'default';
             if (!Array.isArray(state.headerButtonOrder)) state.headerButtonOrder = [];
             if (!Array.isArray(state.dashboardCardOrder)) state.dashboardCardOrder = [];
+            if (typeof state.userName !== 'string') state.userName = '';
             delete state.notes; // drop any leftover data from the removed notepad
             // Alarms are session-only: they are created via the "Set Alarm" button
             // and never restored from storage, so none "load" on page load.
@@ -1273,14 +1280,22 @@ function saveDashboardCardOrder() {
 // (in saved order) into its recorded pane — appendChild on an existing node
 // relocates it, so processing entries in order rebuilds the exact sequence.
 function applyDashboardCardOrder() {
-    if (!state.dashboardCardOrder || !state.dashboardCardOrder.length) return;
     const leftPane = document.querySelector('.left-pane');
     const rightPane = document.querySelector('.right-pane');
-    state.dashboardCardOrder.forEach(({ id, pane }) => {
-        const el = document.getElementById(id);
-        const container = pane === 'left' ? leftPane : rightPane;
-        if (el && container) container.appendChild(el);
-    });
+
+    if (state.dashboardCardOrder && state.dashboardCardOrder.length) {
+        state.dashboardCardOrder.forEach(({ id, pane }) => {
+            const el = document.getElementById(id);
+            const container = pane === 'left' ? leftPane : rightPane;
+            if (el && container) container.appendChild(el);
+        });
+    }
+
+    // The greeting banner isn't a swappable .dashboard-card — it always
+    // belongs pinned below whatever cards end up in the left pane, so
+    // re-assert its position last regardless of how cards got reordered.
+    const greetingBanner = document.getElementById('greetingBanner');
+    if (greetingBanner && leftPane) leftPane.appendChild(greetingBanner);
 }
 
 // Tracker (activity) cards: swap with whatever card they're dropped onto by
@@ -1682,6 +1697,64 @@ function submitRiddleAnswer(e) {
 function toggleRiddleCollapsed() {
     const widget = document.getElementById('riddleWidget');
     if (widget) widget.classList.toggle('collapsed');
+}
+
+// =======================================================================
+// GREETING BANNER — "Good morning Andrew, today is Friday September 4,
+// 2026." Sits below the Analytics Dashboard card. The name comes from the
+// "Your Name" field in Settings; time-of-day and date are computed live.
+// =======================================================================
+
+const GREETING_WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const GREETING_MONTHS = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+function formatGreetingDate(d) {
+    return `${GREETING_WEEKDAYS[d.getDay()]} ${GREETING_MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+// { label, icon } for the current hour — a lucide icon name per time of day.
+function getTimeOfDayInfo(hour) {
+    if (hour >= 5 && hour < 12) return { label: 'morning', icon: 'sunrise' };
+    if (hour >= 12 && hour < 17) return { label: 'afternoon', icon: 'sun' };
+    if (hour >= 17 && hour < 21) return { label: 'evening', icon: 'sunset' };
+    return { label: 'night', icon: 'moon' };
+}
+
+function renderGreeting() {
+    const textEl = document.getElementById('greetingText');
+    const iconWrap = document.getElementById('greetingIconWrap');
+    if (!textEl) return;
+
+    const now = new Date();
+    const { label, icon } = getTimeOfDayInfo(now.getHours());
+    const name = (state.userName || '').trim();
+    const namePart = name ? ` ${name}` : '';
+
+    textEl.textContent = `Good ${label}${namePart}, today is ${formatGreetingDate(now)}.`;
+
+    if (iconWrap && iconWrap.dataset.icon !== icon) {
+        iconWrap.dataset.icon = icon;
+        iconWrap.innerHTML = `<i data-lucide="${icon}"></i>`;
+        lucide.createIcons();
+    }
+}
+
+function setUserName(name) {
+    state.userName = name;
+    saveState();
+    renderGreeting();
+}
+
+function initGreeting() {
+    const input = document.getElementById('userNameInput');
+    if (input) input.value = state.userName || '';
+    renderGreeting();
+    // Keep the time-of-day / date accurate across hour and midnight
+    // boundaries for anyone who leaves the tab open.
+    setInterval(renderGreeting, 60 * 1000);
 }
 
 // Activity logic
