@@ -2423,23 +2423,19 @@ body.light-theme .riddle-form input {
 
 /* ============================================================
    GREETING BANNER
-   Sits below the Analytics Dashboard card — time-of-day greeting,
-   optional name (set in Settings), and today's date.
+   Its own prominent, full-width spot directly below the header (where the
+   ChronoFlow title sits) and above the dashboard — time-of-day greeting,
+   optional name (set in Settings), and today's date, centered so it reads
+   as a clear, noticeable banner rather than blending into the card grid.
    ============================================================ */
 
 .greeting-banner {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.85rem;
-    padding: 1rem 1.25rem;
+    padding: 1.1rem 1.5rem;
     animation: slideIn 0.3s ease;
-    /* .left-pane becomes a 2-column CSS Grid below 1024px (see media query
-       further down) — Grid's default is to stretch every item to match the
-       tallest one in its row. Without this, the banner gets stretched to
-       match whichever card lands beside it. Harmless no-op in the normal
-       flex layout above 1024px. */
-    grid-column: 1 / -1;
-    align-self: start;
 }
 
 .greeting-icon-wrap {

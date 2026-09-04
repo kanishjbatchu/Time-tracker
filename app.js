@@ -1280,22 +1280,14 @@ function saveDashboardCardOrder() {
 // (in saved order) into its recorded pane — appendChild on an existing node
 // relocates it, so processing entries in order rebuilds the exact sequence.
 function applyDashboardCardOrder() {
+    if (!state.dashboardCardOrder || !state.dashboardCardOrder.length) return;
     const leftPane = document.querySelector('.left-pane');
     const rightPane = document.querySelector('.right-pane');
-
-    if (state.dashboardCardOrder && state.dashboardCardOrder.length) {
-        state.dashboardCardOrder.forEach(({ id, pane }) => {
-            const el = document.getElementById(id);
-            const container = pane === 'left' ? leftPane : rightPane;
-            if (el && container) container.appendChild(el);
-        });
-    }
-
-    // The greeting banner isn't a swappable .dashboard-card — it always
-    // belongs pinned below whatever cards end up in the left pane, so
-    // re-assert its position last regardless of how cards got reordered.
-    const greetingBanner = document.getElementById('greetingBanner');
-    if (greetingBanner && leftPane) leftPane.appendChild(greetingBanner);
+    state.dashboardCardOrder.forEach(({ id, pane }) => {
+        const el = document.getElementById(id);
+        const container = pane === 'left' ? leftPane : rightPane;
+        if (el && container) container.appendChild(el);
+    });
 }
 
 // Tracker (activity) cards: swap with whatever card they're dropped onto by
@@ -1701,8 +1693,9 @@ function toggleRiddleCollapsed() {
 
 // =======================================================================
 // GREETING BANNER — "Good morning Andrew, today is Friday September 4,
-// 2026." Sits below the Analytics Dashboard card. The name comes from the
-// "Your Name" field in Settings; time-of-day and date are computed live.
+// 2026." Its own full-width banner directly below the header, above the
+// dashboard. The name comes from the "Your Name" field in Settings;
+// time-of-day and date are computed live.
 // =======================================================================
 
 const GREETING_WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
