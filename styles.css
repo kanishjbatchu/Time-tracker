@@ -2253,52 +2253,50 @@ body.edit-mode-active .dashboard-card:active {
 }
 
 /* ============================================================
-   RIDDLE OF THE DAY
+   WORD OF THE DAY
    ============================================================ */
 
 /* Docked in its own row directly above the tracker cards, right-aligned —
    a reserved spot in normal document flow, so no card (and nothing else)
-   can ever render underneath or overlap it. Not pinned to the page's
-   actual top-right corner; it belongs to the tracker cards area. */
-.riddle-dock {
+   can ever render underneath or overlap it. */
+.word-dock {
     display: flex;
     justify-content: flex-end;
     margin-bottom: 1.25rem;
 }
 
-.riddle-widget {
+.word-widget {
     width: 280px;
     max-width: 100%;
     padding: 1rem 1.1rem;
     animation: slideIn 0.3s ease;
 }
 
-.riddle-header {
+.word-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    cursor: pointer;
 }
 
-.riddle-title {
+.word-title {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     font-weight: 700;
     color: var(--text-main);
 }
 
-.riddle-title i {
+.word-title svg {
     width: 16px;
     height: 16px;
     color: var(--primary);
 }
 
-.riddle-toggle {
-    width: 26px;
-    height: 26px;
+.word-toggle {
+    width: 28px;
+    height: 28px;
     flex-shrink: 0;
     border-radius: var(--radius-sm);
     background: transparent;
@@ -2311,112 +2309,47 @@ body.edit-mode-active .dashboard-card:active {
     transition: all var(--transition-fast);
 }
 
-.riddle-toggle:hover {
+.word-toggle:hover {
     background: var(--bg-glass-hover);
     color: var(--text-main);
 }
 
-/* lucide.createIcons() replaces the <i data-lucide> placeholder with an
-   inline <svg> (same element, new tag) — target svg here, not i, or the
-   rotation never actually applies once icons are rendered. */
-.riddle-toggle svg {
-    transition: transform var(--transition-fast);
-}
-
-.riddle-widget.collapsed .riddle-toggle svg {
-    transform: rotate(180deg);
-}
-
-.riddle-body {
-    margin-top: 0.85rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.65rem;
-}
-
-.riddle-widget.collapsed .riddle-body {
+/* Body only shows while open. */
+.word-body {
     display: none;
+    margin-top: 0.85rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
 }
 
-.riddle-question {
-    font-size: 0.85rem;
-    line-height: 1.5;
-    color: var(--text-main);
-}
-
-.riddle-form {
+.word-widget.open .word-body {
     display: flex;
-    gap: 0.5rem;
 }
 
-.riddle-form input {
-    flex: 1;
-    min-width: 0;
-    font-family: var(--font-primary);
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid var(--border-glass);
-    border-radius: var(--radius-md);
+.word-question {
+    font-size: 0.9rem;
     color: var(--text-main);
-    padding: 0.55rem 0.75rem;
-    font-size: 0.85rem;
-    outline: none;
-    transition: all var(--transition-fast);
 }
 
-body.light-theme .riddle-form input {
-    background: rgba(255, 255, 255, 0.9);
+/* The [hidden] attribute must beat any display rule set on these. */
+.word-body [hidden] {
+    display: none !important;
 }
 
-.riddle-form input:focus {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px var(--primary-glow);
-}
-
-.riddle-form input:disabled {
-    opacity: 0.6;
-}
-
-.btn-icon-sm {
-    width: 36px;
-    height: 36px;
-    flex-shrink: 0;
-    border-radius: var(--radius-md);
+.word-reveal {
+    font-size: 1.6rem;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-transform: capitalize;
     background: var(--primary-gradient);
-    border: none;
-    color: #fff;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all var(--transition-fast);
-}
-
-.btn-icon-sm:hover {
-    transform: translateY(-1px);
-}
-
-.btn-icon-sm:disabled {
-    opacity: 0.5;
-    cursor: default;
-    transform: none;
-}
-
-.riddle-feedback {
-    font-size: 0.78rem;
-    font-weight: 600;
-    min-height: 1.1rem;
-}
-
-.riddle-feedback.correct {
-    color: var(--success);
-}
-
-.riddle-feedback.incorrect {
-    color: var(--accent);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
 @media (max-width: 768px) {
-    .riddle-widget {
+    .word-widget {
         width: 100%;
     }
 }

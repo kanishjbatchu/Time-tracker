@@ -12,7 +12,7 @@ let state = {
     customBackgroundIsDark: null, // sampled average brightness of the uploaded photo, for 'auto' theme mode
     headerButtonOrder: [],  // [id, ...] — saved swap order of header buttons from Edit Mode
     dashboardCardOrder: [], // [{id, pane}] — saved swap order of dashboard cards from Edit Mode
-    riddle: null,          // { date: 'YYYY-MM-DD', solved: boolean } — today's Riddle of the Day progress
+    word: null,            // { date: 'YYYY-MM-DD', revealed: boolean } — today's Word of the Day progress
     userName: ''           // set in Settings, used by the greeting banner below the dashboard
 };
 
@@ -159,7 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyHeaderButtonOrder();
     initHeaderButtonDragging();
     initDashboardCardDragging();
-    initRiddle();
+    initWord();
     initGreeting();
     populateRingtoneOptions();
     setDefaultAlarmDateTime();
@@ -208,11 +208,11 @@ function setupEventListeners() {
     blockClicksDuringEditMode(document.querySelector('.dashboard-grid'));
     blockClicksDuringEditMode(document.querySelector('.header-actions'), '#btnToggleEditMode');
 
-    // Riddle of the Day: answer form + collapse toggle
-    const riddleForm = document.getElementById('riddleForm');
-    if (riddleForm) riddleForm.addEventListener('submit', submitRiddleAnswer);
-    const riddleHeader = document.getElementById('riddleHeader');
-    if (riddleHeader) riddleHeader.addEventListener('click', toggleRiddleCollapsed);
+    // Word of the Day: open/close chevron + reveal button
+    const wordToggle = document.getElementById('wordToggle');
+    if (wordToggle) wordToggle.addEventListener('click', toggleWordOpen);
+    const wordRevealBtn = document.getElementById('wordRevealBtn');
+    if (wordRevealBtn) wordRevealBtn.addEventListener('click', revealWord);
 
     // Greeting banner: name set in Settings updates the greeting live
     const userNameInput = document.getElementById('userNameInput');
@@ -1314,290 +1314,693 @@ function swapActivityOrder(idA, idB) {
 }
 
 // =======================================================================
-// RIDDLE OF THE DAY — a new riddle each calendar day (deterministic, so
-// everyone sees the same one), answer checked case-insensitively.
+// WORD OF THE DAY — a new word each calendar day (deterministic, so
+// everyone sees the same one). Collapsed by default; when opened it asks
+// a definition prompt ("(definition) What is the word?") with a
+// Reveal button that shows the word.
 // =======================================================================
 
-const RIDDLES = [
-    { q: "What has keys but can't open locks?", a: ['a piano', 'piano'] },
-    { q: 'What has a face and two hands but no arms or legs?', a: ['a clock', 'clock'] },
-    { q: 'What has to be broken before you can use it?', a: ['an egg', 'egg'] },
-    { q: 'I speak without a mouth and hear without ears. I have no body, but I come alive with wind. What am I?', a: ['an echo', 'echo'] },
-    { q: 'The more you take, the more you leave behind. What am I?', a: ['footsteps', 'footprints'] },
-    { q: 'What month of the year has 28 days?', a: ['all of them', 'all months', 'every month', 'all'] },
-    { q: "What has one eye but can't see?", a: ['a needle', 'needle'] },
-    { q: 'What can travel around the world while staying in a corner?', a: ['a stamp', 'stamp'] },
-    { q: 'What gets wetter as it dries?', a: ['a towel', 'towel'] },
-    { q: "What has many teeth but can't bite?", a: ['a comb', 'comb'] },
-    { q: 'What has a neck but no head?', a: ['a bottle', 'bottle'] },
-    { q: 'What goes up but never comes down?', a: ['your age', 'age'] },
-    { q: "What has hands but can't clap?", a: ['a clock', 'clock'] },
-    { q: 'What is full of holes but still holds water?', a: ['a sponge', 'sponge'] },
-    { q: 'What can you catch but not throw?', a: ['a cold', 'cold'] },
-    { q: 'What has a bottom at the top?', a: ['your legs', 'legs'] },
-    { q: 'What runs but never walks, has a mouth but never talks?', a: ['a river', 'river'] },
-    { q: 'What invention lets you look right through a wall?', a: ['a window', 'window'] },
-    { q: "What has legs but doesn't walk?", a: ['a table', 'table', 'a chair', 'chair'] },
-    { q: 'What can fill a room but takes up no space?', a: ['light'] },
-    { q: 'What comes once in a minute, twice in a moment, but never in a thousand years?', a: ['the letter m', 'letter m', 'm'] },
-    { q: 'What has an eye but cannot see, and a bed but never sleeps?', a: ['a river', 'river'] },
-    { q: 'What kind of room has no doors or windows?', a: ['a mushroom', 'mushroom'] },
-    { q: 'What begins with T, ends with T, and has T in it?', a: ['a teapot', 'teapot'] },
-    { q: 'What can you break without touching it?', a: ['a promise'] },
-    { q: 'What has a head, a tail, is brown, and has no legs?', a: ['a penny', 'penny', 'a coin', 'coin'] },
-    { q: 'What is easy to get into but hard to get out of?', a: ['trouble'] },
-    { q: "What is always in front of you but can't be seen?", a: ['the future', 'future'] },
-    { q: 'What has one head, one foot, and four legs?', a: ['a bed', 'bed'] },
-    { q: 'What is so fragile that saying its name breaks it?', a: ['silence'] },
-    { q: 'What can you keep after giving it to someone?', a: ['your word', 'word'] },
-    { q: 'What has words but never speaks?', a: ['a book', 'book'] },
+const WORD_ENTRIES = `
+aberration|a departure from what is normal, expected, or correct
+abstain|to choose deliberately not to do something, such as voting or indulging
+acumen|keen insight and quick judgment, especially in business or practical matters
+adamant|refusing to change one's mind; firmly determined
+adept|very skilled at something
+adroit|clever and skillful, especially in handling difficult situations
+aegis|protection, backing, or sponsorship
+affable|friendly, good-natured, and easy to talk to
+alacrity|brisk, cheerful readiness or eagerness
+albeit|even though; despite the fact that
+alchemy|a seemingly magical process of transforming something into something better
+allure|the quality of being powerfully and mysteriously attractive
+aloof|distant and reserved; not friendly or involved
+altruism|selfless concern for the well-being of others
+amalgam|a mixture or blend of different things
+ambivalent|having mixed or conflicting feelings about something
+ameliorate|to make something bad or unsatisfactory better
+amiable|having a friendly, pleasant, and agreeable nature
+anachronism|something placed in the wrong time period, or that seems out of date
+analogous|comparable in certain respects, typically in a way that aids explanation
+anecdote|a short, amusing or interesting story about a real event or person
+animosity|strong hostility or ill will
+annex|to add or attach something, especially territory, to a larger thing
+anomaly|something that deviates from what is standard or expected
+antidote|a remedy that counteracts a poison or a bad situation
+apathy|a lack of interest, enthusiasm, or concern
+apex|the highest point of something; the peak
+aplomb|self-confidence and composure in a demanding situation
+apprehensive|anxious or fearful that something bad will happen
+arbitrary|based on random choice or whim rather than reason or system
+arcane|understood by few; mysterious or secret
+ardent|showing passionate enthusiasm or devotion
+arduous|requiring great effort and endurance; very difficult
+articulate|able to express thoughts clearly and fluently
+ascend|to go up or climb
+aspire|to have a strong desire or ambition to achieve something
+assiduous|showing great care and steady, hard-working persistence
+astute|clever and sharp at judging situations to one's advantage
+atrophy|to waste away or weaken from lack of use
+audacious|showing a willingness to take bold risks
+augment|to make something greater by adding to it
+auspicious|conducive to success; favorable
+austere|severe or strict in manner; plain and without luxury
+avarice|extreme greed for wealth or gain
+aversion|a strong dislike or reluctance toward something
+avid|having a keen interest or enthusiasm
+axiom|a statement accepted as obviously true
+banal|so ordinary and unoriginal that it is boring
+baleful|threatening harm; menacing
+bane|a cause of great distress or ruin
+bashful|shy and easily embarrassed
+bastion|a stronghold or a person or place that defends a principle
+beguile|to charm or enchant, sometimes deceptively
+belie|to give a false impression of; to contradict
+benevolent|kind, generous, and well-meaning
+benign|gentle and kindly; not harmful
+bequeath|to leave property to someone in a will
+bewilder|to confuse someone greatly
+bilk|to cheat or swindle someone out of money
+blithe|cheerful and carefree, sometimes carelessly so
+bolster|to support or strengthen
+bombastic|high-sounding but with little meaning; pompous
+boon|a helpful thing that brings benefit
+brazen|bold and shameless
+brevity|the quality of being brief and concise
+brisk|quick, active, and energetic
+bucolic|relating to the pleasant aspects of the countryside
+buoyant|able to float; cheerful and optimistic
+burgeon|to begin to grow or flourish rapidly
+bustle|excited, energetic activity
+cacophony|a harsh, jarring mixture of loud sounds
+cadence|the rhythmic rise and fall of speech or music
+cajole|to persuade someone using flattery or gentle coaxing
+callous|showing cold, insensitive disregard for others
+candid|truthful and straightforward; frank
+canny|shrewd and careful, especially in money or politics
+capitulate|to give in or surrender after resisting
+capricious|given to sudden, unpredictable changes of mood or behavior
+captivate|to attract and hold the attention of
+carnage|the killing of a large number of people; great slaughter
+catalyst|something that causes or speeds up change
+caustic|able to burn; sarcastic in a scathing way
+cavalier|showing a lack of proper concern; offhand
+celerity|swiftness of movement
+censure|strong, formal expression of disapproval
+chagrin|distress or embarrassment at having failed
+champion|a person who fights or argues for a cause; a winner
+charisma|compelling charm that inspires devotion in others
+chasm|a deep fissure or gap in the earth or between people
+chicanery|the use of trickery to achieve a goal
+chivalry|courteous, honorable behavior, especially toward women
+choleric|bad-tempered; easily angered
+circumspect|wary and unwilling to take risks; careful
+clandestine|kept secret, often because illicit
+clemency|mercy or leniency toward someone
+cliche|an overused phrase or idea that has lost its impact
+coalesce|to come together to form one mass or whole
+cogent|clear, logical, and convincing
+cohesive|forming a united whole
+colloquial|used in ordinary, informal conversation
+commence|to begin or start
+compelling|evoking strong interest or admiration in a way that is hard to resist
+complacent|smugly satisfied and unaware of possible dangers
+concise|giving a lot of information clearly in few words
+concord|agreement or harmony between people or things
+condone|to accept or allow behavior that is considered wrong
+confluence|a coming together, such as of two rivers
+conjure|to call to mind or bring about as if by magic
+connoisseur|an expert judge in matters of taste
+consensus|general agreement among a group
+contrite|feeling remorseful and sorry for wrongdoing
+conundrum|a confusing and difficult problem or question
+convivial|friendly, lively, and enjoyable in atmosphere
+copious|abundant in supply or quantity
+cordial|warm, polite, and friendly
+cornucopia|an abundant supply of good things
+covet|to yearn to possess something belonging to another
+credulous|too ready to believe things
+crescendo|a gradual increase in loudness or intensity
+cryptic|having a meaning that is mysterious or obscure
+culminate|to reach a climax or point of highest development
+cumbersome|large or heavy and therefore difficult to handle
+cunning|skill in achieving one's ends by deceit or cleverness
+cursory|hasty and therefore not thorough
+dabble|to take part in an activity in a casual or superficial way
+daunt|to make someone feel intimidated or less confident
+dearth|a scarcity or lack of something
+debacle|a sudden and ignominious failure; a fiasco
+debonair|confident, stylish, and charming in manner
+decorum|behavior that shows good taste and politeness
+deference|humble submission and respect
+deft|neatly skillful and quick in movement
+defunct|no longer existing or functioning
+delineate|to describe or portray something precisely
+deluge|a severe flood; an overwhelming quantity
+demeanor|outward behavior or bearing
+denounce|to publicly declare something to be wrong or evil
+depict|to show or represent in a picture or words
+deride|to mock or ridicule
+desolate|deserted, empty, and bleak
+despot|a ruler who holds absolute power, often cruelly
+deter|to discourage someone from doing something through fear of consequences
+devout|deeply religious or committed
+dexterous|skillful with the hands
+diaphanous|light, delicate, and translucent
+dichotomy|a division into two sharply contrasting parts
+diffident|modest or shy because of a lack of self-confidence
+digress|to leave the main subject temporarily while speaking or writing
+diligent|showing steady, careful effort in one's work
+diminutive|extremely small
+disparate|essentially different and not able to be compared
+dissent|the holding of opinions that differ from those officially held
+diverge|to separate and go in different directions
+docile|ready to accept control or instruction; submissive
+dogmatic|asserting opinions as if they were undeniably true
+dormant|temporarily inactive or asleep
+dubious|hesitating or doubting; not to be relied upon
+duress|threats or force used to make someone do something
+ebullient|cheerful and full of energy
+eccentric|unconventional and slightly strange
+eclectic|drawing ideas or style from a broad range of sources
+edict|an official order or proclamation issued by an authority
+efface|to erase or make something disappear
+effervescent|bubbly; vivacious and enthusiastic
+efficacy|the ability to produce a desired result
+effusive|expressing feelings in an unrestrained, gushing way
+egregious|outstandingly bad; shocking
+elated|extremely happy and proud
+elegy|a sorrowful poem or song, especially for the dead
+elicit|to draw out a response or reaction
+eloquent|fluent and persuasive in speaking or writing
+elucidate|to make something clear by explaining it
+elusive|difficult to find, catch, or achieve
+emanate|to flow out from a source
+embark|to begin a journey or undertaking
+embellish|to make more attractive by adding decorative details
+eminent|famous and respected within a particular field
+empathy|the ability to understand and share another person's feelings
+emulate|to match or surpass by imitating
+enclave|a place or group that is different from those surrounding it
+endeavor|a serious attempt to achieve a goal
+enigma|a person or thing that is mysterious and hard to understand
+ennui|a feeling of listlessness and boredom
+ephemeral|lasting for a very short time
+epitome|a perfect example of a particular quality or type
+equanimity|calmness and composure, especially under stress
+equivocal|open to more than one interpretation; ambiguous
+eradicate|to destroy completely; to wipe out
+erratic|not even or regular in pattern or movement
+erudite|having or showing great knowledge from study
+esoteric|intended for or understood by only a small group with special knowledge
+espouse|to adopt or support a belief or cause
+ethereal|extremely delicate and light, almost heavenly
+euphoria|a feeling of intense excitement and happiness
+evade|to escape or avoid, especially by cleverness or trickery
+evanescent|quickly fading from sight or memory
+exacerbate|to make a problem or bad situation worse
+exalt|to hold in very high regard; to praise
+exemplary|serving as a desirable model; outstandingly good
+exhort|to strongly encourage or urge someone to do something
+exonerate|to clear someone of blame or guilt
+expedite|to make a process happen sooner or be accomplished faster
+explicit|stated clearly and in detail, leaving no room for doubt
+exquisite|extremely beautiful and delicately made
+extol|to praise enthusiastically
+exuberant|filled with lively energy and excitement
+fabricate|to invent something false; to construct
+facade|the front of a building; a deceptive outward appearance
+facet|one side of something many-sided; an aspect
+fallacy|a mistaken belief based on unsound reasoning
+fastidious|very attentive to accuracy and detail; hard to please
+fathom|to understand a difficult problem or idea after much thought
+fecund|producing many offspring or fruit; fertile
+felicity|intense happiness; a well-chosen expression
+ferocious|savagely fierce and cruel
+fervent|having or displaying passionate intensity
+fetter|to restrain or chain; a restraint
+fiasco|a complete and humiliating failure
+fidelity|faithfulness to a person, cause, or belief
+finesse|impressive delicacy and skill in handling a situation
+flagrant|obviously and shockingly wrong
+flamboyant|showy and exuberant in style or manner
+fledgling|a young bird learning to fly; a person new to an activity
+flourish|to grow or develop in a healthy, vigorous way
+fluctuate|to rise and fall irregularly in number or amount
+foible|a minor weakness or eccentricity in someone's character
+foment|to stir up or instigate trouble or rebellion
+forbearance|patient self-control; restraint and tolerance
+foray|a brief, spirited attempt to venture into a new area
+forlorn|pitifully sad and abandoned or lonely
+formidable|inspiring fear or respect through being large or powerful
+fortitude|courage in pain or adversity
+fortuitous|happening by a lucky chance
+fracas|a noisy disorderly fight or quarrel
+frugal|sparing or economical with money or food
+fruition|the point at which a plan or project is realized
+fulsome|excessively flattering or insincere in praise
+furtive|attempting to avoid notice; secretive
+futile|incapable of producing any useful result; pointless
+gainsay|to deny or contradict a statement
+galvanize|to shock or excite someone into taking action
+gambit|an opening move that involves a calculated risk
+garrulous|excessively talkative, especially on trivial matters
+gauche|lacking ease or grace; socially awkward
+genial|friendly and cheerful
+genuine|truly what something is said to be; authentic
+germane|relevant to a subject under consideration
+gist|the substance or general meaning of a speech or text
+glean|to gather information or grain in small amounts from various sources
+glib|fluent but insincere and shallow
+gossamer|something very light, thin, and delicate, like a spider's thread
+gracious|courteous, kind, and pleasant
+gregarious|fond of company; sociable
+grimace|an ugly, twisted expression showing pain or disgust
+grovel|to lie or crawl face downward; to act servilely
+guile|sly or cunning intelligence
+gullible|easily persuaded to believe something
+habitat|the natural home or environment of an animal or plant
+halcyon|denoting a period of time that was happy and peaceful
+hallowed|made holy; honored as sacred
+hapless|unlucky
+harbinger|a person or thing that announces or signals what is coming
+harrowing|acutely distressing
+haughty|arrogantly superior and disdainful
+hegemony|dominance of one group or nation over others
+heresy|a belief or opinion contrary to accepted doctrine
+hiatus|a pause or gap in a sequence or activity
+hierarchy|a system in which people or things are ranked one above another
+hilarity|extreme amusement, especially when expressed with laughter
+hinder|to create difficulties that delay or obstruct
+holistic|dealing with the whole of something rather than its separate parts
+homage|special honor or respect shown publicly
+hubris|excessive pride or self-confidence
+humane|showing compassion and benevolence
+humble|having a modest or low estimate of one's own importance
+hyperbole|exaggerated statements not meant to be taken literally
+hypothesis|a proposed explanation made as a starting point for investigation
+iconoclast|a person who attacks cherished beliefs or institutions
+idealist|a person who believes in or pursues perfect standards
+idiosyncrasy|a mode of behavior or way of thought peculiar to a person
+idyllic|extremely happy, peaceful, and picturesque
+ignominy|public shame or disgrace
+illuminate|to light up or make clearer
+illustrious|well known, respected, and admired for past achievements
+imbue|to inspire or permeate with a feeling or quality
+immaculate|perfectly clean, neat, and tidy
+immerse|to dip or submerge in liquid; to involve deeply
+imminent|about to happen
+impartial|treating all rivals or disputants equally; fair
+impeccable|in accordance with the highest standards; faultless
+impede|to delay or prevent by obstructing
+imperative|of vital importance; crucial
+impetus|the force that makes something happen or happen more quickly
+implicit|implied though not plainly expressed
+impromptu|done without being planned or rehearsed
+impudent|not showing due respect; cheeky
+inadvertent|not resulting from deliberate planning; unintentional
+inane|silly and lacking sense
+incessant|continuing without pause or interruption
+incisive|intelligently analytical and clear-thinking
+incongruous|out of place or not in harmony with surroundings
+indelible|making marks that cannot be removed
+indigenous|originating or occurring naturally in a particular place
+indolent|wanting to avoid activity or exertion; lazy
+ineffable|too great or extreme to be expressed in words
+inept|having or showing no skill; clumsy
+inexorable|impossible to stop or prevent
+infamy|the state of being well known for some bad quality or deed
+ingenious|clever, original, and inventive
+ingenuous|innocent and unsuspecting
+inhibit|to hinder, restrain, or prevent
+innate|inborn; natural
+innocuous|not harmful or offensive
+inscrutable|impossible to understand or interpret
+insidious|proceeding in a gradual, subtle way with harmful effects
+insipid|lacking flavor or interest
+insular|ignorant of or uninterested in cultures outside one's own
+intangible|unable to be touched; not having physical presence
+integral|necessary to make a whole complete
+intrepid|fearless and adventurous
+intrinsic|belonging naturally; essential
+introspective|inclined to examine one's own thoughts and feelings
+inundate|to overwhelm with things or people to be dealt with
+inure|to accustom someone to something unpleasant
+irascible|easily angered; hot-tempered
+irrevocable|not able to be changed, reversed, or recovered
+itinerant|traveling from place to place
+jaded|bored or lacking enthusiasm after having had too much of something
+jargon|special words or expressions used by a profession or group
+jaunty|having a lively, cheerful, self-confident manner
+jeopardy|danger of loss, harm, or failure
+jettison|to throw or drop from a vehicle; to abandon
+jocular|fond of joking; humorous
+jovial|cheerful and friendly
+jubilant|feeling or expressing great joy
+judicious|having or showing good judgment
+juncture|a particular point in events or time; a joining place
+juxtapose|to place close together for contrasting effect
+kaleidoscope|a constantly changing pattern of colors or events
+keen|having or showing eagerness; sharp
+kernel|the central or most important part of something
+kindle|to light a fire or arouse an emotion
+kinetic|relating to or resulting from motion
+kismet|destiny; fate
+knack|an acquired or natural skill at doing something
+labyrinth|a complicated network of passages in which it is difficult to find one's way
+lackluster|lacking in vitality, force, or conviction
+laconic|using very few words
+lament|to express passionate grief about something
+languid|displaying a lack of energy in a pleasantly relaxed way
+lassitude|a state of physical or mental weariness
+latent|existing but not yet developed or visible
+laud|to praise highly
+lavish|sumptuously rich or generous
+lax|not sufficiently strict or careful
+legacy|something handed down from an ancestor or the past
+lethargic|sluggish and apathetic
+levity|humor or lack of seriousness, especially at an inappropriate time
+liaison|communication or cooperation that facilitates a close working relationship
+lithe|thin, supple, and graceful
+loquacious|tending to talk a great deal
+lucid|expressed clearly; easy to understand
+lucrative|producing a great deal of profit
+ludicrous|so foolish as to be amusing or ridiculous
+lugubrious|looking or sounding sad and dismal
+lull|a temporary interval of quiet; to soothe gently
+luminous|full of or shedding light; glowing
+lurid|vivid in a harsh way, or sensational and shocking
+luxuriant|rich and profuse in growth
+machination|a plot or scheme, especially an evil one
+magnanimous|generous or forgiving, especially toward a rival
+malady|a disease or ailment
+malleable|able to be hammered or pressed into shape; easily influenced
+mandate|an official order or commission to do something
+manifest|clear or obvious to the eye or mind
+maverick|an independent-minded person who does not conform
+meager|lacking in quantity or quality
+meander|to follow a winding course; to wander aimlessly
+mediocre|of only moderate quality; not very good
+melancholy|a feeling of pensive sadness
+mellifluous|sweet-sounding; pleasant to hear
+mercurial|subject to sudden or unpredictable changes of mood
+meticulous|showing great attention to detail; very careful
+mettle|a person's ability to cope well with difficulties; spirit
+milieu|a person's social environment
+mimic|to imitate someone or something, especially to entertain
+minuscule|extremely small
+mirth|amusement, especially as expressed in laughter
+mitigate|to make less severe, serious, or painful
+modicum|a small quantity of something valuable or desirable
+mollify|to soothe the anger or anxiety of
+momentous|of great importance or consequence
+morose|sullen and ill-tempered
+mundane|lacking interest or excitement; dull; of this world
+munificent|more generous than is usual or necessary
+mutable|liable to change
+myriad|a countless or extremely great number
+nadir|the lowest point in the fortunes of a person or organization
+naive|showing a lack of experience, wisdom, or judgment
+nebulous|in the form of a cloud or haze; vague and unclear
+nefarious|wicked or criminal
+nemesis|the inescapable agent of someone's downfall
+nettle|to irritate or annoy
+nimble|quick and light in movement or action
+nocturnal|done, occurring, or active at night
+nonchalant|casually calm and relaxed; not displaying anxiety
+nostalgia|a wistful longing for the past
+notorious|famous or well known, typically for some bad quality
+novice|a person new to and inexperienced at a job or situation
+noxious|harmful, poisonous, or very unpleasant
+nuance|a subtle difference in meaning, expression, or sound
+nurture|to care for and encourage the growth of
+obdurate|stubbornly refusing to change one's opinion
+oblivion|the state of being unaware or forgotten
+obscure|not clear; unknown or hard to see
+obsequious|obedient or attentive to an excessive degree
+obsolete|no longer produced or used; out of date
+obstinate|stubbornly refusing to change one's mind
+obtuse|annoyingly slow to understand
+ominous|giving the impression that something bad is going to happen
+onerous|involving a burdensome amount of effort or difficulty
+opaque|not able to be seen through; not transparent
+opulent|ostentatiously rich and luxurious
+oracle|a person or thing regarded as a source of wise counsel or prophecy
+ornate|elaborately decorated
+oscillate|to swing back and forth at a regular rate
+ostentatious|characterized by pretentious display meant to impress
+ostracize|to exclude someone from a society or group
+pacify|to quell the anger or agitation of
+palatable|pleasant to taste; acceptable
+pallid|pale, typically because of poor health
+panacea|a solution or remedy for all difficulties or diseases
+paradigm|a typical example or model of something
+paragon|a person regarded as a perfect example of a quality
+paramount|more important than anything else; supreme
+parity|the state of being equal, especially in status or pay
+parsimonious|unwilling to spend money; extremely frugal
+partisan|a strong supporter of a party, cause, or person
+patina|a thin layer that forms on old surfaces with age
+paucity|the presence of something in only small or insufficient quantities
+pedantic|excessively concerned with minor details or rules
+pejorative|expressing contempt or disapproval
+pensive|engaged in deep or serious thought
+perceptive|having or showing sensitive insight
+peremptory|insisting on immediate attention or obedience
+perennial|lasting or existing for a long or apparently infinite time
+perfunctory|carried out with minimal effort or reflection
+peripheral|of secondary or minor importance; on the edge
+pernicious|having a harmful effect, especially in a gradual way
+perpetual|never ending or changing
+perplex|to cause someone to feel completely baffled
+perspicacious|having a ready insight into things; shrewd
+pertinent|relevant or applicable to a particular matter
+pervade|to spread through and be perceived in every part of
+petulant|childishly sulky or bad-tempered
+phlegmatic|having an unemotional and calm disposition
+picturesque|visually attractive, especially in a quaint style
+pinnacle|the most successful point; a high pointed peak
+pithy|concise and forcefully expressive
+placid|not easily upset or excited; calm
+plausible|seeming reasonable or probable
+plethora|a large or excessive amount of something
+poignant|evoking a keen sense of sadness or regret
+polarize|to divide into two sharply contrasting groups
+pompous|affectedly and irritatingly grand or self-important
+ponder|to think about something carefully
+pragmatic|dealing with things sensibly and realistically
+precarious|not securely held or in position; dangerously unstable
+precocious|having developed certain abilities at an earlier age than usual
+predilection|a preference or special liking for something
+preeminent|surpassing all others; very distinguished
+prelude|an action or event serving as an introduction to something more important
+prerogative|a right or privilege exclusive to a particular person or group
+prevalent|widespread in a particular area or at a particular time
+pristine|in its original condition; unspoiled
+probity|the quality of having strong moral principles; honesty
+prodigal|spending money freely and recklessly; wastefully extravagant
+prodigious|remarkably great in extent, size, or degree
+profound|very great or intense; showing deep insight
+profuse|abundant; given freely and in large amounts
+proliferate|to increase rapidly in numbers
+prolific|producing much fruit, foliage, or many offspring or works
+propensity|an inclination or natural tendency to behave in a particular way
+propitious|giving or indicating a good chance of success; favorable
+prosaic|having the style or spirit of prose; lacking poetic beauty
+prowess|skill or expertise in a particular activity
+prudent|acting with or showing care and thought for the future
+pugnacious|eager or quick to argue, quarrel, or fight
+pundit|an expert who is frequently called on to give opinions
+pungent|having a sharply strong taste or smell
+purport|to appear or claim to be or do something
+pursuit|the action of chasing or striving after something
+quaint|attractively unusual or old-fashioned
+qualm|an uneasy feeling of doubt or worry about one's conduct
+quandary|a state of perplexity or uncertainty over what to do
+quell|to put an end to a rebellion or other disorder, typically by force
+querulous|complaining in a petulant or whining manner
+quiescent|in a state or period of inactivity or dormancy
+quixotic|extremely idealistic; unrealistic and impractical
+quotidian|of or occurring every day; ordinary
+rampant|flourishing or spreading unchecked
+rancor|bitterness or resentfulness, especially when long standing
+rapport|a close and harmonious relationship of understanding
+rational|based on or in accordance with reason or logic
+raucous|making a disturbingly harsh and loud noise
+ravenous|extremely hungry
+rebuke|to express sharp disapproval or criticism of someone
+recalcitrant|having an obstinately uncooperative attitude toward authority
+reciprocate|to respond to an action by making a corresponding one
+reclusive|avoiding the company of other people; solitary
+recondite|little known; obscure and hard to grasp
+redolent|strongly reminiscent or suggestive of something
+redress|to remedy or set right an undesirable situation
+refrain|to stop oneself from doing something; a repeated line in a song
+refute|to prove a statement or theory to be wrong
+reiterate|to say something again or a number of times
+relegate|to assign to an inferior rank or position
+relinquish|to voluntarily cease to keep or claim; give up
+remedial|giving or intended as a remedy or cure
+remnant|a small remaining quantity of something
+remorse|deep regret or guilt for a wrong committed
+renounce|to formally declare one's abandonment of a claim or habit
+replete|filled or well supplied with something
+reprieve|to cancel or postpone the punishment of someone
+reprise|a repeated passage in music; to repeat
+repudiate|to refuse to accept or be associated with
+rescind|to revoke, cancel, or repeal a law or agreement
+resilient|able to recover quickly from difficulties
+resolute|admirably purposeful, determined, and unwavering
+respite|a short period of rest or relief from something difficult
+resplendent|attractive and impressive through being richly colorful or sumptuous
+reticent|not revealing one's thoughts or feelings readily
+revere|to feel deep respect or admiration for
+rhetoric|the art of effective or persuasive speaking or writing
+rigorous|extremely thorough, exhaustive, or accurate
+robust|strong and healthy; vigorous
+rudimentary|involving or limited to basic principles
+ruminate|to think deeply about something
+rustic|relating to the countryside; simple and unsophisticated
+ruthless|having or showing no pity or compassion for others
+sagacious|having or showing keen mental discernment and good judgment
+salient|most noticeable or important
+salubrious|health-giving; pleasant
+sanctuary|a place of refuge or safety
+sanguine|optimistic or positive, especially in a difficult situation
+sardonic|grimly mocking or cynical
+satiate|to satisfy a desire or appetite fully
+saunter|to walk in a slow, relaxed manner
+savant|a learned person, especially a distinguished scientist
+scant|barely sufficient or adequate
+scrupulous|diligent, thorough, and extremely attentive to details
+scrutinize|to examine or inspect closely and thoroughly
+secular|not connected with religious or spiritual matters
+sedentary|tending to spend much time seated; inactive
+semblance|the outward appearance or apparent form of something
+serendipity|the occurrence of happy events by chance
+serene|calm, peaceful, and untroubled
+servile|having or showing an excessive willingness to serve others
+sever|to divide by cutting or slicing
+shrewd|having sharp powers of judgment; astute
+sinuous|having many curves and turns
+skeptic|a person inclined to question or doubt accepted opinions
+slake|to satisfy a thirst or desire
+sleuth|a detective
+sluggish|slow-moving; inactive
+sobriety|the state of being sober; seriousness
+solace|comfort in a time of distress or sadness
+solicit|to ask for or try to obtain something from someone
+solitude|the state of being alone
+somber|dark or dull in color or tone; gloomy
+sonorous|imposingly deep and full in sound
+sophomoric|overly pretentious but immature
+soporific|tending to induce drowsiness or sleep
+sparse|thinly dispersed or scattered
+spontaneous|performed or occurring as a result of a sudden impulse
+sporadic|occurring at irregular intervals or only in a few places
+spurious|not being what it purports to be; false
+squalid|extremely dirty and unpleasant, especially through neglect
+staunch|very loyal and committed in attitude
+stoic|a person who can endure pain or hardship without complaint
+stupor|a state of near unconsciousness or insensibility
+suave|charming, confident, and elegant, especially in manner
+subtle|so delicate or precise as to be difficult to analyze or describe
+succinct|briefly and clearly expressed
+succumb|to fail to resist pressure or temptation
+superfluous|unnecessary, especially through being more than enough
+supplant|to supersede and replace
+surmise|to suppose that something is true without having evidence
+surreptitious|kept secret, especially because it would not be approved of
+sustain|to strengthen or support physically or mentally; to keep going
+sycophant|a person who acts obsequiously toward someone important to gain advantage
+symmetry|the quality of being made up of exactly similar parts facing each other
+synergy|the combined effect of cooperation being greater than the sum of the parts
+taciturn|reserved or uncommunicative in speech
+tangible|perceptible by touch; clear and definite
+tantamount|equivalent in seriousness to; virtually the same as
+tedious|too long, slow, or dull
+temerity|excessive confidence or boldness
+tenable|able to be maintained or defended against attack or objection
+tenacious|holding firmly to something; persistent
+tenuous|very weak or slight
+tepid|only slightly warm; lacking enthusiasm
+terse|sparing in the use of words; abrupt
+thrifty|using money and other resources carefully
+thwart|to prevent someone from accomplishing something
+timorous|showing or suffering from nervousness or a lack of confidence
+tirade|a long, angry speech of criticism or accusation
+tenet|a principle or belief held as true by a group
+torpid|mentally or physically inactive; lethargic
+tranquil|free from disturbance; calm
+transient|lasting only for a short time; impermanent
+trepidation|a feeling of fear or anxiety about something that may happen
+trivial|of little value or importance
+truculent|eager or quick to argue or fight; aggressively defiant
+turbulent|characterized by conflict, disorder, or confusion
+tycoon|a wealthy, powerful person in business or industry
+ubiquitous|present, appearing, or found everywhere
+ulterior|existing beyond what is obvious; intentionally hidden
+unassuming|not pretentious or arrogant; modest
+unanimous|fully in agreement; shared by everyone
+uncanny|strange or mysterious, especially in an unsettling way
+unequivocal|leaving no doubt; unambiguous
+unfathomable|incapable of being fully explored or understood
+unkempt|having an untidy or slovenly appearance
+unwieldy|difficult to carry or manage because of size or shape
+upbraid|to find fault with someone; scold
+urbane|suave, courteous, and refined in manner
+usurp|to take a position or power illegally or by force
+utopia|an imagined place or state in which everything is perfect
+vacillate|to waver between different opinions or actions
+vagrant|a person without a settled home or regular work
+valiant|possessing or showing courage or determination
+vanguard|the leading position in a movement or field
+vapid|offering nothing that is stimulating or challenging
+variegated|exhibiting different colors, especially as irregular patches
+venerable|accorded a great deal of respect because of age or wisdom
+veracity|conformity to facts; accuracy
+verbose|using more words than needed
+verdant|green with grass or other lush vegetation
+vernacular|the language or dialect spoken by ordinary people in a region
+versatile|able to adapt or be adapted to many different functions
+vestige|a trace of something that is disappearing or no longer exists
+vex|to make someone feel annoyed, frustrated, or worried
+viable|capable of working successfully; feasible
+vibrant|full of energy and life
+vicarious|experienced in the imagination through the actions of another person
+vigilant|keeping careful watch for possible danger or difficulties
+vindicate|to clear someone of blame or suspicion; to prove right
+virtuoso|a person highly skilled in music or another artistic pursuit
+vivacious|attractively lively and animated
+vociferous|vehement or clamorous in expressing opinions
+volatile|liable to change rapidly and unpredictably
+voracious|wanting or devouring great quantities of something
+wanderlust|a strong desire to travel and explore the world
+wane|to decrease gradually in size or strength
+wary|feeling or showing caution about possible dangers
+wayward|difficult to control or predict because of unusual or selfish behavior
+whimsical|playfully quaint or fanciful, especially in an appealing way
+wily|skilled at gaining an advantage, especially deceitfully
+winsome|attractive or appealing in a fresh and innocent way
+wistful|having or showing a feeling of vague or regretful longing
+wither|to become dry and shriveled
+wrath|extreme anger
+xenial|hospitable to guests or strangers
+yearn|to have an intense feeling of longing for something
+yield|to produce or provide; to give way to pressure
+zealous|having or showing great energy or enthusiasm in pursuit of a cause
+zenith|the time at which something is most powerful or successful
+zephyr|a soft, gentle breeze
+zest|great enthusiasm and energy
+`.trim().split('\n').map(line => {
+    const i = line.indexOf('|');
+    return { word: line.slice(0, i), def: line.slice(i + 1) };
+});
 
-    // --- Objects & everyday things ---
-    { q: "What has a thumb and four fingers but isn't alive?", a: ['a glove', 'glove'] },
-    { q: 'What has a ring but no finger, and rings without ever calling itself?', a: ['a telephone', 'telephone', 'a phone', 'phone'] },
-    { q: "What has teeth but can't eat, and helps you cut through wood?", a: ['a saw', 'saw'] },
-    { q: 'What has a spine but no bones, and pages instead of ribs?', a: ['a book', 'book'] },
-    { q: 'What has many keys, opens no doors, and is used every day to write?', a: ['a keyboard', 'keyboard'] },
-    { q: 'What kind of coat is always wet when you put it on?', a: ['a coat of paint', 'coat of paint', 'paint'] },
-    { q: 'What is black when clean and white when dirty?', a: ['a chalkboard', 'chalkboard', 'a blackboard', 'blackboard'] },
-    { q: 'What has four wheels and flies, but is never seen soaring through the sky?', a: ['a garbage truck', 'garbage truck'] },
-    { q: "What goes up and down all day but never actually moves from its spot?", a: ['stairs', 'a staircase'] },
-    { q: 'What has a heart that never beats, hiding at the center of a vegetable?', a: ['an artichoke', 'artichoke'] },
-    { q: 'What can you hold for a long time without ever touching it with your hands?', a: ['your breath', 'breath'] },
-    { q: 'What starts completely empty but is always full of letters by the end of the week?', a: ['a mailbox', 'mailbox'] },
-    { q: "What has a ring, but not on a finger, and wakes you up in the morning?", a: ['an alarm clock', 'alarm clock'] },
-    { q: 'What kind of band is worn around your wrist but never plays a note of music?', a: ['a rubber band', 'rubber band'] },
-    { q: "What kind of dog never barks, and you might put mustard on it?", a: ['a hot dog', 'hot dog'] },
-    { q: "What kind of cup can't hold any water at all, but you can eat it after a party?", a: ['a cupcake', 'cupcake'] },
-    { q: 'What kind of nut has no shell but is covered in glaze or sprinkles?', a: ['a doughnut', 'doughnut', 'a donut', 'donut'] },
-    { q: 'What has one horn, four legs, and delivers milk instead of making music?', a: ['a milk truck', 'milk truck'] },
-    { q: 'What runs all the way around a yard but never takes a single step?', a: ['a fence', 'fence'] },
-    { q: 'What word starts with an E, ends with an E, but usually only has one letter inside it?', a: ['an envelope', 'envelope'] },
-    { q: 'What word is spelled incorrectly in absolutely every dictionary?', a: ['wrong', 'the word wrong'] },
-    { q: 'What five-letter word becomes shorter the moment you add two more letters to it?', a: ['short'] },
-    { q: 'What word reads exactly the same upside down and backward?', a: ['swims'] },
-    { q: 'What has cities but no houses, forests but no trees, and rivers but no water?', a: ['a map', 'map'] },
-    { q: 'What always points north, no matter which way you turn it?', a: ['a compass', 'compass'] },
-    { q: 'What kind of table has no legs to stand on at all?', a: ['a timetable', 'timetable'] },
-    { q: 'What has a lock but no door, and keeps all your secrets safe in writing?', a: ['a diary', 'diary', 'a journal', 'journal'] },
-    { q: 'What can be cracked, made, told, and played, all without ever being a physical object?', a: ['a joke', 'joke'] },
-    { q: 'What has an army of pieces but no real weapons, and battles are fought on a checkered board?', a: ['chess', 'a chess set'] },
-    { q: 'What kind of "ship" has no captain, never touches water, but can carry two people for years?', a: ['a relationship', 'relationship'] },
-    { q: 'What falls all the time but is never hurt when it lands?', a: ['rain'] },
-    { q: 'What falls every single day but never actually breaks?', a: ['night', 'nightfall'] },
-    { q: 'What goes up in the air the moment rain starts coming down?', a: ['an umbrella', 'umbrella'] },
-    { q: 'What is always coming but somehow never actually arrives?', a: ['tomorrow'] },
-    { q: "What letter can you find in the middle of March and April, but not at the start or end of either?", a: ['the letter r', 'letter r', 'r'] },
-    { q: 'What walks on four legs in the morning, two legs in the afternoon, and three legs in the evening?', a: ['a human', 'human', 'a person', 'person', 'man'] },
-    { q: 'What can you look through, walk through the frame of, but never actually walk through the door of?', a: ['a keyhole', 'keyhole'] },
-    { q: 'What season do you get when you jump on a trampoline?', a: ['spring', 'springtime'] },
-    { q: "What kind of tree grows in nearly every family, but you could never plant it in the ground?", a: ['a family tree', 'family tree'] },
-    { q: 'What travels constantly from the past into the future but never once stops moving?', a: ['time'] },
-    { q: "What kind of shower doesn't need a single drop of water, and falls from outer space?", a: ['a meteor shower', 'meteor shower'] },
-    { q: 'What alphabet is made entirely of dots and dashes?', a: ['morse code', 'morse'] },
-    { q: 'What can you make, but never see, hear, or touch, yet everyone hopes will come true?', a: ['a wish', 'wish'] },
-    { q: 'What kind of storm never produces a single drop of rain?', a: ['a brainstorm', 'brainstorm'] },
-    { q: 'What animal is always found standing at a baseball game?', a: ['a bat', 'bat'] },
-    { q: 'What do you call a bear that has lost all of its teeth?', a: ['a gummy bear', 'gummy bear'] },
-    { q: 'What has a tongue but can never say a single word?', a: ['a shoe', 'shoe'] },
-    { q: 'What animal always sleeps with its shoes on?', a: ['a horse', 'horse'] },
-    { q: 'What kind of dog keeps the best time, staying alert all night long?', a: ['a watchdog', 'watchdog'] },
-    { q: 'What insect can spell out an entire word using just one letter?', a: ['a bee', 'bee'] },
-    { q: 'What grows ears every summer but can never hear a single word?', a: ['corn'] },
-    { q: 'What bird can lift the heaviest loads on a construction site?', a: ['a crane', 'crane'] },
-    { q: 'What kind of "key" has fur, a tail, and loves to eat bananas?', a: ['a monkey', 'monkey'] },
-    { q: 'What has a bill but never once has to pay it?', a: ['a duck', 'duck'] },
-    { q: 'What has a comb on its head but never uses it to comb anything?', a: ['a rooster', 'rooster'] },
-    { q: "A father's son who is not your brother — who could this be?", a: ['you', 'me', 'yourself'] },
-    { q: 'What can you give away to someone else and still keep for yourself?', a: ['a smile', 'smile'] },
-    { q: 'What has eyes but cannot see, and grows quietly underground?', a: ['a potato', 'potato'] },
-    { q: 'What fruit is never found without its matching partner, sharing half its name with the word "two"?', a: ['a pear', 'pear'] },
-    { q: 'What goes into the water bright red, and comes out completely black?', a: ['a hot iron', 'hot iron', 'iron'] },
-    { q: 'What kind of nut sounds exactly like a sneeze?', a: ['a cashew', 'cashew'] },
-    { q: 'What has a wick, slowly melts as it works, and is often lit for a bit of light?', a: ['a candle', 'candle'] },
-    { q: 'What kind of "table" can you actually sit down and eat?', a: ['a vegetable', 'vegetable'] },
-    { q: 'What kind of dough do you play with, never bake, and definitely never eat?', a: ['play-doh', 'playdough', 'play dough'] },
-    { q: 'What has a skin but no flesh, no bones, and no blood at all?', a: ['a banana', 'banana'] },
-    { q: 'What has rings all over its body but is not jewelry, and can reveal its age if you count them?', a: ['a tree', 'tree'] },
-    { q: 'What vegetable is orange and sounds just like a talking bird?', a: ['a carrot', 'carrot'] },
-    { q: 'What kind of "egg" is a vegetable you would never crack into a pan?', a: ['an eggplant', 'eggplant'] },
-    { q: 'What part of your body has the most rhythm, hidden deep inside your ear?', a: ['an eardrum', 'eardrum'] },
-    { q: 'What gets bigger and bigger the more you take away from it?', a: ['a hole', 'hole'] },
-    { q: 'What has a screen, a keyboard, and a mouse, but never blinks and never runs anywhere?', a: ['a computer', 'computer'] },
-    { q: 'What has lots of buttons but no buttonholes, and controls your entire television?', a: ['a remote control', 'remote control', 'a remote', 'remote'] },
-    { q: 'What rings all day long, lives in your pocket, but has no fingers of its own?', a: ['a phone', 'phone', 'a cell phone', 'cell phone'] },
-    { q: 'What can you scroll through for hours without ever touching an actual scroll?', a: ['a phone', 'phone', 'social media'] },
-    { q: "What kind of ball can never be thrown, kicked, or bounced, yet you use it to see?", a: ['an eyeball', 'eyeball'] },
-    { q: 'What sport are waiters naturally talented at, simply because of what they do all day?', a: ['tennis'] },
-    { q: 'What race includes absolutely everyone, yet nobody ever truly wins it?', a: ['the human race', 'human race'] },
-    { q: 'What field has a diamond right in the middle of it, yet grows no crops at all?', a: ['a baseball field', 'baseball field'] },
-    { q: 'What has strings, a neck, and a body, yet has never once been alive?', a: ['a guitar', 'guitar'] },
-    { q: 'What can you see straight through, yet it still keeps the wind and rain outside?', a: ['glass'] },
-    { q: 'What is black and white, and gets read all over every single morning?', a: ['a newspaper', 'newspaper'] },
-    { q: 'What can spread through an entire room in seconds, without anyone lifting a finger, after a good joke?', a: ['laughter'] },
-    { q: 'What shape has no beginning, no end, and no corners at all?', a: ['a circle', 'circle'] },
-    { q: 'What takes years to build, only seconds to break, and is nearly impossible to fully repair?', a: ['trust'] },
-    { q: 'What kind of worker spends the whole day underground, digging for valuable resources?', a: ['a miner', 'miner'] },
-    { q: 'What kind of artist uses a needle full of ink instead of a paintbrush?', a: ['a tattoo artist', 'tattoo artist'] },
-    { q: 'What kind of worker gets paid to break buildings apart on purpose?', a: ['a demolition worker', 'demolition worker'] },
-    { q: 'What has craters all over it, yet has never been in a single battle?', a: ['the moon', 'moon'] },
-    { q: 'What planet is famous for the beautiful rings that circle all the way around it?', a: ['saturn'] },
-    { q: 'What has a spine and many pages, and can weigh down your backpack all school year long?', a: ['a textbook', 'textbook'] },
-    { q: 'What test does absolutely everything in life eventually have to pass, without ever opening a book?', a: ['the test of time', 'test of time'] },
-    { q: 'What can be given away completely, over and over, without ever once running out?', a: ['love'] },
-    { q: 'What grows the more it is shared, but does nothing at all sitting quietly alone in your head?', a: ['knowledge'] },
-    { q: 'What word has the longest distance between its first and last letters, because there is a "mile" in between them?', a: ['smiles'] },
-    { q: 'What starts with the letter P, ends with the letter E, and yet somehow contains thousands and thousands of letters?', a: ['a post office', 'post office'] },
-    { q: 'What five-letter word sounds exactly the same even after you take away its last four letters?', a: ['queue'] },
-    { q: 'What letter is waiting for you at the very end of every single rainbow?', a: ['the letter w', 'letter w', 'w'] },
-    { q: "If you have one, you want to share it. The moment you share it, you no longer really have it. What is it?", a: ['a secret', 'secret'] },
-    { q: 'The more you have of it, the less you are able to see. What is it?', a: ['darkness'] },
-    { q: 'What can be cut again and again, over and over, without ever actually getting any smaller?', a: ['a deck of cards', 'deck of cards', 'cards'] },
-    { q: 'What can be broken, yet breaking it is often something worth celebrating?', a: ['a record', 'record'] },
-    { q: 'What natural "coat" only ever forms on your car windows during freezing weather?', a: ['frost'] },
-    { q: 'What has a face and hands, yet no eyes or arms, and is usually strapped to your wrist?', a: ['a watch', 'watch'] },
-    { q: 'What can be driven, yet has no wheels and no engine at all, and is struck with a hammer?', a: ['a nail', 'nail'] },
-    { q: 'What gets "measured" at the end of every school term, yet weighs absolutely nothing?', a: ['your grades', 'grades'] },
-    { q: 'What has spinning blades but is never once used for cooking?', a: ['a fan', 'fan'] },
-    { q: 'What kind of "house" can a small, slow creature carry around on its very own back?', a: ['a shell', 'shell'] },
-    { q: 'What kind of "ladder" do people spend their whole career climbing, without ever using their feet?', a: ['the career ladder', 'career ladder'] },
-    { q: 'What kitchen tool is covered in tiny holes, yet is perfect for draining pasta without losing a single noodle?', a: ['a colander', 'colander', 'a strainer', 'strainer'] },
-    { q: 'What can be popped for fun at a party, is not a food, and is made of thin stretchy rubber and air?', a: ['a balloon', 'balloon'] },
-    { q: 'What single word can mean both a season of the year and the bouncy part inside an old mattress?', a: ['spring'] },
-    { q: 'What has a spout shaped like a beak, and whistles loudly the moment the water is ready?', a: ['a kettle', 'kettle'] },
-    { q: 'What object shows your own reflection back at you, yet feels cold to the touch and can shatter?', a: ['a mirror', 'mirror'] },
-    { q: 'What can you "draw" without ever needing a pencil, paper, or any artistic skill whatsoever?', a: ['a breath', 'breath'] },
-    { q: "What has a dial and a needle, yet no phone number, and tells you exactly how hot or cold it is?", a: ['a thermometer', 'thermometer'] },
-    { q: 'What device can clean an entire floor of dust and crumbs without you ever having to push it?', a: ['a robot vacuum', 'robot vacuum'] },
-    { q: "What kind of 'glass' measures time falling through sand, instead of ever being used to drink from?", a: ['an hourglass', 'hourglass'] },
-    { q: 'What device can capture a single moment forever, with nothing more than a click and a flash?', a: ['a camera', 'camera'] },
-    { q: 'What has a lens, is not a pair of glasses, and lets you see planets far away in the night sky?', a: ['a telescope', 'telescope'] },
-    { q: "What tool makes tiny things look much bigger, without ever actually changing their real size?", a: ['a magnifying glass', 'magnifying glass'] },
-    { q: 'What has a sharp blade, is worn on your feet, and lets you glide smoothly across ice?', a: ['an ice skate', 'ice skate', 'ice skates'] },
-    { q: 'What sport uses a feathered shuttlecock instead of a ball, hit back and forth with rackets?', a: ['badminton'] },
-    { q: 'What classic board game involves buying up streets and possibly landing yourself in jail?', a: ['monopoly'] },
-    { q: 'What has a shell you must crack open, yet no living creature ever crawls out of it?', a: ['a peanut', 'peanut', 'a nut', 'nut'] },
-    { q: 'What must be twisted off before you can take your very first sip of a fizzy soda?', a: ['a bottle cap', 'bottle cap'] },
-    { q: 'What animal has a long trunk, giant ears, and is famous for never forgetting anything?', a: ['an elephant', 'elephant'] },
-    { q: 'What animal hops everywhere, carries its babies in a pouch, and calls Australia home?', a: ['a kangaroo', 'kangaroo'] },
-    { q: "What animal can change the color of its skin to hide perfectly from predators?", a: ['a chameleon', 'chameleon'] },
-    { q: 'What has black and white stripes just like a zebra, but is painted flat on a city street?', a: ['a crosswalk', 'crosswalk'] },
-    { q: 'What insect lives inside a hive, makes something sweet, and can only sting a person once?', a: ['a bee', 'bee'] },
-    { q: 'What creature has eight long legs and spins delicate webs, but is not an octopus?', a: ['a spider', 'spider'] },
-    { q: "What bird can't fly a single inch, but is an excellent swimmer in icy waters?", a: ['a penguin', 'penguin'] },
-    { q: 'What desert animal can go a very long time without water, thanks to the hump on its back?', a: ['a camel', 'camel'] },
-    { q: "What African animal has a distinctive laugh, even though it isn't actually happy?", a: ['a hyena', 'hyena'] },
-    { q: 'What animal is famously called the "king of the jungle," even though it mostly lives on the grasslands?', a: ['a lion', 'lion'] },
-    { q: 'What European country is famous for being shaped almost exactly like a tall boot?', a: ['italy'] },
-    { q: 'What is the largest ocean on the entire planet?', a: ['the pacific ocean', 'pacific ocean', 'the pacific', 'pacific'] },
-    { q: 'What is the tallest mountain in the entire world, found in the Himalayas?', a: ['mount everest', 'everest'] },
-    { q: 'What is the smallest independent country in the entire world?', a: ['vatican city', 'the vatican', 'vatican'] },
-    { q: 'What spooky holiday do people carve faces into pumpkins for?', a: ['halloween'] },
-    { q: 'What holiday in the United States centers around a big turkey dinner and giving thanks?', a: ['thanksgiving'] },
-    { q: "What American holiday is celebrated with fireworks every year on the fourth of July?", a: ['independence day', 'the fourth of july', 'fourth of july', 'july 4th'] },
-    { q: 'What winter holiday features a decorated tree covered in lights and ornaments?', a: ['christmas'] },
-    { q: "What holiday do people celebrate at the stroke of midnight, welcoming a brand new year?", a: ["new year's eve", 'new years eve'] },
-    { q: 'What state of matter has no fixed shape and no fixed volume of its own?', a: ['a gas', 'gas'] },
-    { q: 'What invisible force is constantly pulling every object down toward the Earth?', a: ['gravity'] },
-    { q: 'What life-giving gas makes up about twenty-one percent of the air we breathe?', a: ['oxygen'] },
-    { q: 'What is the scientific name for a caterpillar transforming into a butterfly?', a: ['metamorphosis'] },
-    { q: 'What comes in pairs, protects your feet all day, and gets taken off right before bed?', a: ['shoes'] },
-    { q: 'What kind of "jacket" can a book wear, that a person would never put on?', a: ['a dust jacket', 'dust jacket', 'a book cover', 'book cover'] },
-    { q: 'What word contains twenty-six letters but is made up of only three syllables?', a: ['the alphabet', 'alphabet'] },
-    { q: 'I am a word of letters three; add two more and fewer there will be. What word am I?', a: ['few'] },
-    { q: 'What single letter marks both the end of everything, and the very last letter of the word "everything" itself?', a: ['the letter g', 'letter g', 'g'] },
-    { q: "What flows constantly from a faucet, can be still or rushing, and is essential to every living thing?", a: ['water'] },
-    { q: 'What comes out weekly or monthly, packed with glossy pages and advertisements, but is not a book?', a: ['a magazine', 'magazine'] },
-    { q: 'What is the only number whose name has the exact same number of letters as its value?', a: ['four', '4'] },
-    { q: 'What number is exactly one third of one thousand two hundred?', a: ['four hundred', '400'] },
-    { q: 'What number, when doubled, gives you eighteen?', a: ['nine', '9'] },
-    { q: "You have two coins that add up to thirty cents, and one of them is not a nickel. What are the two coins?", a: ['a quarter and a nickel', 'quarter and a nickel', 'a nickel and a quarter'] },
-    { q: 'What do you get when you add up every number from one to ten?', a: ['fifty-five', '55'] },
-    { q: 'What number comes exactly one after one hundred?', a: ['one hundred one', '101'] },
-    { q: 'What number is exactly half of one hundred?', a: ['fifty', '50'] },
-    { q: 'How many sides does a hexagon have?', a: ['six', '6'] },
-    { q: 'How many legs does a spider have?', a: ['eight', '8'] },
-    { q: 'How many continents are there on planet Earth?', a: ['seven', '7'] },
-    { q: 'How many distinct colors are traditionally counted in a rainbow?', a: ['seven', '7'] },
-    { q: 'How many strings does a standard guitar have?', a: ['six', '6'] },
-    { q: 'How many players from each team are on the field at once during a soccer match?', a: ['eleven', '11'] },
-    { q: 'How many hearts does an octopus have pumping inside it?', a: ['three', '3'] },
-    { q: 'How many minutes are there in one full day?', a: ['1440', 'fourteen forty', 'one thousand four hundred forty'] },
-    { q: 'How many degrees are there in a perfect right angle?', a: ['ninety', '90'] },
-    { q: 'What is the freezing point of water, measured in Fahrenheit?', a: ['thirty-two', '32'] },
-    { q: 'What planet is famously nicknamed the "Red Planet"?', a: ['mars'] },
-    { q: 'What is the largest planet in our entire solar system?', a: ['jupiter'] },
-    { q: 'What is the closest planet to the sun?', a: ['mercury'] },
-    { q: 'What galaxy do Earth and our entire solar system call home?', a: ['the milky way', 'milky way'] },
-    { q: 'What do bees collect from flowers before turning it into honey?', a: ['nectar'] },
-    { q: 'What is the hardest naturally occurring substance found on Earth?', a: ['diamond'] },
-    { q: 'What organ in your body is responsible for pumping blood everywhere it needs to go?', a: ['the heart', 'heart'] },
-    { q: 'What is the largest single organ in the entire human body?', a: ['the skin', 'skin'] },
-    { q: 'What is the name of the process plants use to turn sunlight into food?', a: ['photosynthesis'] },
-    { q: 'What tiny structure at the center of an atom holds its protons and neutrons?', a: ['the nucleus', 'nucleus'] },
-    { q: "What structure inside a cell is famously nicknamed the 'powerhouse of the cell' in every biology class?", a: ['the mitochondria', 'mitochondria'] },
-    { q: 'What icy continent is famously home to enormous colonies of penguins?', a: ['antarctica'] },
-    { q: "What is the largest hot desert in the entire world?", a: ['the sahara', 'sahara', 'the sahara desert', 'sahara desert'] },
-    { q: 'What is the tallest animal in the entire world, with an incredibly long neck?', a: ['a giraffe', 'giraffe'] },
-    { q: 'What is the fastest land animal in the entire world, capable of incredible bursts of speed?', a: ['a cheetah', 'cheetah'] },
-    { q: 'What is the largest mammal on planet Earth, living deep in the ocean?', a: ['a blue whale', 'blue whale', 'a whale', 'whale'] },
-    { q: 'What is the only mammal in the world truly capable of powered flight?', a: ['a bat', 'bat'] },
-    { q: 'What green fruit is mashed up to make guacamole?', a: ['an avocado', 'avocado'] },
-    { q: 'What Italian dish is made of flat baked dough topped with sauce and melted cheese?', a: ['pizza'] },
-    { q: 'What frozen dessert is often scooped into a crunchy cone on a hot summer day?', a: ['ice cream'] },
-    { q: 'What hot drink is made by brewing roasted beans in hot water, usually first thing in the morning?', a: ['coffee'] },
-    { q: 'What yellow fruit is a favorite snack of monkeys everywhere?', a: ['a banana', 'banana'] },
-    { q: "What red fruit is traditionally given to a teacher, and is said to keep the doctor away?", a: ['an apple', 'apple'] },
-    { q: 'What creamy spread is made almost entirely from crushed, roasted peanuts?', a: ['peanut butter'] },
-    { q: 'What white liquid comes from cows and is often poured straight over cereal?', a: ['milk'] },
-    { q: 'What kind of professional rushes toward danger to put out burning buildings?', a: ['a firefighter', 'firefighter'] },
-    { q: 'What kind of professional is trained to fly passenger airplanes?', a: ['a pilot', 'pilot'] },
-    { q: 'What kind of professional takes care of sick and injured animals?', a: ['a veterinarian', 'veterinarian', 'a vet', 'vet'] },
-    { q: 'What kind of professional is responsible for enforcing the law and catching criminals?', a: ['a police officer', 'police officer'] },
-    { q: 'What kind of professional bakes fresh bread and pastries for a living?', a: ['a baker', 'baker'] },
-    { q: 'What do you "break" with a total stranger to start a friendly conversation?', a: ['the ice'] },
-    { q: 'What are you told to let lie, instead of stirring up trouble from the past?', a: ['sleeping dogs', 'dogs'] },
-    { q: 'What does the early bird famously catch, according to the old saying?', a: ['the worm', 'worm'] },
-    { q: 'What do you accidentally "spill" when you let a secret slip out?', a: ['the beans', 'beans'] },
-    { q: 'What do you "hit" when you head off to bed and fall asleep quickly?', a: ['the hay', 'hay', 'the sack', 'sack'] },
-    { q: 'What has a little cap that pops off, yet the object underneath never had a head at all?', a: ['a pen', 'pen'] },
-    { q: "What kind of 'coat' does a bear wear every single day of its life, and can never take off?", a: ['fur'] },
-    { q: 'What is famously said to "fly" even though it has absolutely no wings?', a: ['time'] },
-    { q: 'What has numbers you spin to open a safe, yet never once tells you what time it is?', a: ['a combination lock', 'combination lock'] },
-    { q: 'What handheld device lights up the dark and usually runs on batteries?', a: ['a flashlight', 'flashlight'] },
-    { q: 'What has soft bristles, is not alive, and cleans your teeth twice a day?', a: ['a toothbrush', 'toothbrush'] },
-    { q: 'What white stick is used to write on a chalkboard, made from compressed calcium?', a: ['chalk'] },
-    { q: 'What small bent piece of metal holds loose sheets of paper together without any glue?', a: ['a paperclip', 'paperclip', 'a paper clip', 'paper clip'] },
-    { q: 'What sticky material comes on a roll and can join two pieces of paper together instantly?', a: ['tape'] },
-    { q: 'What tool tells you exactly how heavy something is when you step on it?', a: ['a scale', 'scale'] },
-    { q: 'What holds your pants up over your shoulders, without needing a belt at all?', a: ['suspenders'] },
-    { q: 'What hard shell protects your head while riding a bike or motorcycle?', a: ['a helmet', 'helmet'] },
-    { q: "What dark lenses protect your eyes from the sun's bright glare?", a: ['sunglasses'] },
-    { q: 'What warm hand covering keeps all four fingers together instead of separated?', a: ['mittens'] },
-    { q: 'What metal object, with unique grooves, is used to unlock a door?', a: ['a key', 'key'] },
-    { q: 'What can carry a whole stack of books on your back on the walk to school?', a: ['a backpack', 'backpack'] },
-    { q: 'What small pink or white tool removes pencil marks from paper?', a: ['an eraser', 'eraser'] },
-    { q: 'What small device is used to keep a pencil sharp and ready to write?', a: ['a pencil sharpener', 'pencil sharpener'] },
-    { q: 'What rooftop instrument spins to show you which way the wind is blowing?', a: ['a weather vane', 'weather vane'] },
-    { q: 'What glowing object lights up a room the instant electricity flows through its filament?', a: ['a light bulb', 'light bulb', 'a lightbulb', 'lightbulb'] },
-    { q: 'What can you flip to instantly turn a dark room bright again?', a: ['a light switch', 'light switch'] },
-    { q: 'What appliance keeps your food cold so it does not spoil?', a: ['a refrigerator', 'refrigerator', 'a fridge', 'fridge'] },
-    { q: 'What kitchen appliance heats up leftovers in just a couple of minutes using invisible waves?', a: ['a microwave', 'microwave'] },
-    { q: 'What appliance scrubs and rinses your dirty dishes so you never have to do it by hand?', a: ['a dishwasher', 'dishwasher'] },
-    { q: 'What machine spins your wet clothes around and around until they are dry?', a: ['a dryer', 'dryer'] },
-    { q: 'What machine washes your dirty clothes using water, soap, and a good spin cycle?', a: ['a washing machine', 'washing machine'] },
-    { q: 'What long-handled tool with bristles is used to sweep a floor clean?', a: ['a broom', 'broom'] },
-    { q: 'What household machine sucks up dust and crumbs from your carpet?', a: ['a vacuum', 'vacuum', 'a vacuum cleaner', 'vacuum cleaner'] },
-    { q: 'What tool has absorbent strings and is used to clean up spills from a floor?', a: ['a mop', 'mop'] },
-    { q: 'What container holds your garbage until it finally gets taken out?', a: ['a trash can', 'trash can', 'a garbage can', 'garbage can'] },
-    { q: 'What small hole in a front door lets you see exactly who is standing outside?', a: ['a peephole', 'peephole'] },
-    { q: 'What device rings loudly the moment someone presses the button by your front door?', a: ['a doorbell', 'doorbell'] },
-    { q: 'What loud device warns your whole house if it senses smoke in the air?', a: ['a smoke detector', 'smoke detector', 'a smoke alarm', 'smoke alarm'] },
-    { q: 'What large door at the front of a house opens automatically to let a car inside?', a: ['a garage door', 'garage door'] },
-    { q: 'What machine is pushed across a yard to keep the grass neatly trimmed?', a: ['a lawnmower', 'lawnmower', 'a lawn mower', 'lawn mower'] },
-    { q: 'What tool has a long handle and a flat metal blade, perfect for digging holes in the ground?', a: ['a shovel', 'shovel'] },
-    { q: 'What tool has two handles and two sharp blades, used to cut paper or fabric?', a: ['scissors', 'a pair of scissors'] }
-];
+// Local calendar day number (days since 1970-01-01), so the word changes
+// at local midnight and never repeats until every word has been used.
+function getWordDayIndex(d) {
+    return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000);
+}
 
 function getTodayDateString() {
     const d = new Date();
@@ -1605,91 +2008,56 @@ function getTodayDateString() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function getDayOfYear(d) {
-    const start = new Date(d.getFullYear(), 0, 0);
-    return Math.floor((d - start) / 86400000);
+function getTodaysWord() {
+    return WORD_ENTRIES[getWordDayIndex(new Date()) % WORD_ENTRIES.length];
 }
 
-function getTodaysRiddle() {
-    return RIDDLES[getDayOfYear(new Date()) % RIDDLES.length];
-}
-
-// Lowercase, trim, collapse whitespace, and drop a leading article / trailing
-// punctuation so "Echo", "echo.", and "an echo" are all treated the same.
-function normalizeRiddleAnswer(str) {
-    return str.trim().toLowerCase()
-        .replace(/[.!?]+$/, '')
-        .replace(/\s+/g, ' ')
-        .replace(/^(a|an|the)\s+/, '');
-}
-
-function checkRiddleAnswer(userAnswer, riddle) {
-    const normalizedUser = normalizeRiddleAnswer(userAnswer);
-    return riddle.a.some(accepted => normalizeRiddleAnswer(accepted) === normalizedUser);
-}
-
-function initRiddle() {
+function initWord() {
     const today = getTodayDateString();
-    if (!state.riddle || state.riddle.date !== today) {
-        state.riddle = { date: today, solved: false };
+    if (!state.word || state.word.date !== today) {
+        state.word = { date: today, revealed: false };
         saveState();
     }
-    renderRiddle();
+    renderWord();
 }
 
-function renderRiddle() {
-    const riddle = getTodaysRiddle();
-    const qEl = document.getElementById('riddleQuestion');
-    const inputEl = document.getElementById('riddleAnswerInput');
-    const feedbackEl = document.getElementById('riddleFeedback');
-    const submitBtn = document.querySelector('#riddleForm button');
-    if (!qEl || !inputEl || !feedbackEl) return;
+function renderWord() {
+    const wordEl = document.getElementById('wordReveal');
+    const revealBtn = document.getElementById('wordRevealBtn');
+    if (!wordEl || !revealBtn) return;
 
-    qEl.textContent = riddle.q;
+    const revealed = !!(state.word && state.word.revealed);
+    const entry = getTodaysWord();
+    const promptEl = document.getElementById('wordPrompt');
+    if (promptEl) promptEl.textContent = `${entry.def.charAt(0).toUpperCase() + entry.def.slice(1)}. What is the word?`;
+    wordEl.textContent = revealed ? entry.word : '';
+    wordEl.hidden = !revealed;
+    revealBtn.hidden = revealed; // the button goes away once the word is shown
+}
 
-    const solved = state.riddle && state.riddle.solved;
-    inputEl.disabled = !!solved;
-    if (submitBtn) submitBtn.disabled = !!solved;
+function revealWord() {
+    if (!state.word || state.word.revealed) return;
+    state.word.revealed = true;
+    saveState();
+    renderWord();
+}
 
-    if (solved) {
-        inputEl.value = riddle.a[0];
-        feedbackEl.textContent = 'Solved! Come back tomorrow for a new riddle.';
-        feedbackEl.className = 'riddle-feedback correct';
-    } else {
-        inputEl.value = '';
-        feedbackEl.textContent = '';
-        feedbackEl.className = 'riddle-feedback';
+// Closed by default; the chevron points down when closed, up when open.
+function toggleWordOpen() {
+    const widget = document.getElementById('wordWidget');
+    const icon = document.getElementById('wordToggleIcon');
+    if (!widget || !icon) return;
+    const open = widget.classList.toggle('open');
+    icon.innerHTML = `<i data-lucide="${open ? 'chevron-up' : 'chevron-down'}"></i>`;
+    lucide.createIcons();
+    const btn = document.getElementById('wordToggle');
+    if (btn) {
+        btn.setAttribute('aria-label', open ? 'Close word of the day' : 'Open word of the day');
+        btn.setAttribute('aria-expanded', String(open));
     }
 }
 
-function submitRiddleAnswer(e) {
-    e.preventDefault();
-    if (!state.riddle || state.riddle.solved) return;
 
-    const inputEl = document.getElementById('riddleAnswerInput');
-    const feedbackEl = document.getElementById('riddleFeedback');
-    const value = inputEl.value;
-    if (!value.trim()) return;
-
-    if (checkRiddleAnswer(value, getTodaysRiddle())) {
-        state.riddle.solved = true;
-        saveState();
-        feedbackEl.textContent = 'Correct! 🎉';
-        feedbackEl.className = 'riddle-feedback correct';
-        inputEl.disabled = true;
-        const submitBtn = document.querySelector('#riddleForm button');
-        if (submitBtn) submitBtn.disabled = true;
-        showToast('Riddle solved! 🧩', 'success');
-    } else {
-        feedbackEl.textContent = 'Not quite — try again!';
-        feedbackEl.className = 'riddle-feedback incorrect';
-    }
-}
-
-function toggleRiddleCollapsed() {
-    const widget = document.getElementById('riddleWidget');
-    if (widget) widget.classList.toggle('collapsed');
-}
 
 // =======================================================================
 // GREETING BANNER — "Good morning Andrew, today is Friday September 4,
