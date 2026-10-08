@@ -12,7 +12,7 @@ let state = {
     customBackgroundIsDark: null, // sampled average brightness of the uploaded photo, for 'auto' theme mode
     headerButtonOrder: [],  // [id, ...] — saved swap order of header buttons from Edit Mode
     dashboardCardOrder: [], // [{id, pane}] — saved swap order of dashboard cards from Edit Mode
-    word: null,            // { date: 'YYYY-MM-DD', revealed: boolean } — today's Word of the Day progress
+    daily: null,           // { date, revealed, choice } — today's progress on the daily feature
     userName: ''           // set in Settings, used by the greeting banner below the dashboard
 };
 
@@ -159,7 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyHeaderButtonOrder();
     initHeaderButtonDragging();
     initDashboardCardDragging();
-    initWord();
+    initDaily();
     initGreeting();
     populateRingtoneOptions();
     setDefaultAlarmDateTime();
@@ -208,11 +208,16 @@ function setupEventListeners() {
     blockClicksDuringEditMode(document.querySelector('.dashboard-grid'));
     blockClicksDuringEditMode(document.querySelector('.header-actions'), '#btnToggleEditMode');
 
-    // Word of the Day: open/close chevron + reveal button
-    const wordToggle = document.getElementById('wordToggle');
-    if (wordToggle) wordToggle.addEventListener('click', toggleWordOpen);
-    const wordRevealBtn = document.getElementById('wordRevealBtn');
-    if (wordRevealBtn) wordRevealBtn.addEventListener('click', revealWord);
+    // Daily feature: open/close chevron, reveal button, and answer choices
+    const dailyToggle = document.getElementById('dailyToggle');
+    if (dailyToggle) dailyToggle.addEventListener('click', toggleDailyOpen);
+    const dailyRevealBtn = document.getElementById('dailyRevealBtn');
+    if (dailyRevealBtn) dailyRevealBtn.addEventListener('click', revealDaily);
+    const dailyChoices = document.getElementById('dailyChoices');
+    if (dailyChoices) dailyChoices.addEventListener('click', (e) => {
+        const btn = e.target.closest('.daily-choice');
+        if (btn) chooseDaily(parseInt(btn.dataset.index, 10));
+    });
 
     // Greeting banner: name set in Settings updates the greeting live
     const userNameInput = document.getElementById('userNameInput');
@@ -1314,11 +1319,28 @@ function swapActivityOrder(idA, idB) {
 }
 
 // =======================================================================
-// WORD OF THE DAY — a new word each calendar day (deterministic, so
-// everyone sees the same one). Collapsed by default; when opened it asks
-// a definition prompt ("(definition) What is the word?") with a
-// Reveal button that shows the word.
+// DAILY FEATURE — every day of the week has its own purpose:
+//   Sunday    Motivation Sunday         a motivational quote
+//   Monday    Word Monday               guess the word from its definition
+//   Tuesday   Would You Rather Tuesday  tap an option, see a fun result
+//   Wednesday Riddle Wednesday          a riddle made only of clues
+//   Thursday  Trivia Thursday           one question, pick the right answer
+//   Friday    Fun Fact Friday           a surprising fact with a reveal
+//   Saturday  Story/Joke Saturday       a joke with a punchline reveal
+// Closed by default; the chevron opens and closes it. Content is picked
+// deterministically from each day's pool, so it never repeats until the
+// whole pool has been used.
 // =======================================================================
+
+// Turn "a|b|c" lines into objects with the given keys.
+function parsePool(text, keys) {
+    return text.trim().split('\n').filter(Boolean).map(line => {
+        const parts = line.split('|');
+        const obj = {};
+        keys.forEach((k, i) => { obj[k] = parts[i]; });
+        return obj;
+    });
+}
 
 const WORD_ENTRIES = `
 aberration|a departure from what is normal, expected, or correct
@@ -1996,63 +2018,883 @@ zest|great enthusiasm and energy
     return { word: line.slice(0, i), def: line.slice(i + 1) };
 });
 
-// Local calendar day number (days since 1970-01-01), so the word changes
-// at local midnight and never repeats until every word has been used.
+// Pools for the other days. One line per entry, fields separated by "|".
+const WYR_ENTRIES = parsePool(`
+Be able to fly|Be able to turn invisible|You soar above the clouds with a view no airplane can match. Just dodge the birds!|You sneak into the best snack cupboards on the planet and nobody ever finds out.
+Live in a treehouse|Live on a houseboat|You wake up to birdsong and the best sunrise views around.|You fall asleep to gentle waves and never have to mow a lawn.
+Always have to sing instead of talk|Always have to dance everywhere you go|Ordering lunch turns into a Broadway show, and everyone gets a standing ovation.|Your commute becomes a dance battle and the crosswalk is your stage.
+Have a pet dragon the size of a cat|Have a pet cat the size of a dragon|Your tiny dragon toasts marshmallows on command. Best campfire buddy ever.|Your giant cat naps on top of the house and the whole street gets shade.
+Never need sleep|Never need to eat|You finish every book on your shelf by Friday and still have energy left over.|You save a fortune on groceries, but pizza night is sadly canceled forever.
+Explore the deep ocean|Explore outer space|You meet glowing jellyfish and creatures nobody has ever named.|You float past the rings of Saturn with the quietest view in the universe.
+Have a rewind button for your life|Have a pause button for your life|You undo every embarrassing moment. Say hello to a flawless first impression!|You freeze time to finish your homework and still catch the whole movie.
+Be the funniest person alive|Be the smartest person alive|Every room you enter bursts out laughing before you even finish the joke.|You solve the world's trickiest puzzles before breakfast.
+Eat only pizza forever|Eat only tacos forever|Cheesy, saucy, and absolutely never boring. Your slice game is legendary.|Crunchy, spicy, and every day is Taco Tuesday. Hot sauce for the win!
+Have super speed|Have super strength|You run around the world before your toast pops up.|You carry all the groceries in one trip and open every stubborn jar.
+Talk to animals|Speak every human language|Your dog finally explains why it barks at the mailman. Spoiler: it is personal.|You make friends in every country and order dinner like a local anywhere you go.
+Have a rooftop pool|Have a backyard movie theater|Cannonballs at sunset with the whole city lit up below you.|Popcorn under the stars with a screen as big as a barn.
+Live without music|Live without movies|The world gets awfully quiet, but your humming skills hit a new level.|Your imagination becomes the best cinema in town, and snacks still taste great.
+Have unlimited hot chocolate|Have unlimited ice cream|Every winter morning feels like a warm hug in a mug.|Every day is a sundae, and brain freeze is just a way of life.
+Be a famous movie star|Be a famous athlete|You walk red carpets and wave at cameras while wearing sunglasses at night.|Crowds chant your name and you finally get a trophy bigger than you are.
+Jump as high as a house|Run as fast as a car|You hop onto roofs like they are curbs and the view is amazing.|You beat traffic on foot and never miss the bus again.
+Have a robot butler|Have a talking parrot sidekick|Your room cleans itself and the robot even folds socks in perfect pairs.|Your parrot narrates your day and loudly announces every snack you open.
+Always be ten minutes early|Always be ten minutes late|You get the best seat everywhere and have time to people-watch.|You get fashionably late entrances and everyone wonders what you were up to.
+Live in a castle|Live in a spaceship|You have a drawbridge, a moat, and a very echoey hallway for slides.|You have a window to the stars and a hallway where you float around.
+Have a mini hippo as a pet|Have a pet penguin as a pet|Your hippo hums happily in the bath, and the bath is ALWAYS taken.|Your penguin waddles to the door to greet you in a tiny tuxedo.
+Be able to breathe underwater|Be able to survive in space without a suit|You befriend dolphins and discover sunken treasure galore.|You leap from the moon to Mars like it is a trampoline park.
+Only whisper|Only shout|Everyone leans in close to hear your every secret word.|Your voice carries across the whole stadium without a microphone.
+Have a chocolate river|Have a lemonade waterfall|You paddle a candy boat through the sweetest scenery ever.|Every hike ends with a refreshing splash of sunshine in a cup.
+Have the ability to teleport|Have the ability to time travel|You pop to Paris for breakfast and Tokyo for dinner.|You say hi to dinosaurs, then jump ahead to see the flying cars.
+Be a superhero with a cape|Be a wizard with a wand|Your cape flaps heroically in the wind. Dramatic entrances guaranteed.|Your wand sparks and every messy room tidies itself in a swirl of glitter.
+Have eyes that glow in the dark|Have hair that changes color with your mood|You never need a flashlight on midnight snack runs.|Everyone knows you are happy when your hair turns sunny yellow.
+Have a giant slide from your bedroom to the kitchen|Have a secret passage behind your bookshelf|Breakfast arrives in record time with zero stairs involved.|You become the keeper of a hidden hideout filled with snacks and blankets.
+Always win at board games|Always win at video games|Your family quietly asks to play something else on game night.|You break every high score and still have thumbs left to celebrate.
+Be able to freeze time for one hour a day|Be able to see five seconds into the future|You get a free hour to nap, snack, or rearrange the whole room.|You dodge every puddle and catch every dropped cookie.
+Have a pet unicorn|Have a pet phoenix|Your unicorn sparkles through rain and makes every parade a good one.|Your phoenix warms your toes on cold nights and always comes back stronger.
+Eat dessert before dinner every day|Eat breakfast for dinner every day|The best part of the meal arrives first and no one complains.|Pancakes at sunset. Waffles under the stars. Syrup for the win.
+Live in a world made of candy|Live in a world made of LEGO|You can snack on the scenery, but remember to brush your teeth.|You build anything you imagine, but step carefully in bare feet!
+Be able to talk to plants|Be able to talk to the weather|The tomatoes finally explain why they are always so dramatic.|You politely ask the clouds to clear up for your picnic.
+Have a trampoline floor in your house|Have a swing set in your living room|Every walk to the fridge becomes a high-flying adventure.|You sway into every day with the breeze, even indoors.
+Have infinite pencils|Have infinite markers|Your notebook becomes a masterpiece factory, no sharpener needed.|Everything you own gets a fresh coat of color and creativity.
+Hear colors|See sounds|The sunrise plays a gentle melody every morning.|A thunderclap paints the sky in dramatic streaks of light.
+Have a personal rain cloud follow you|Have a personal sunbeam follow you|Your plants adore you and puddle jumping is always in season.|You glow like a movie hero, even on gloomy Mondays.
+Have the world's best sandwich shop|Have the world's best ice cream shop|You are the lunch hero, and the line wraps around the block.|People travel from far and wide for your signature scoop.
+Be the size of a mouse for a day|Be the size of a giraffe for a day|A crumb becomes a feast and every couch is a mountain to climb.|You peek over rooftops and high-five the ceiling fans.
+Live one year in the past|Live one year in the future|You get another shot at some favorite memories.|You get a sneak peek at the gadgets everyone is excited about.
+Have a bottomless popcorn bucket|Have a bottomless pretzel bag|Movie nights are never the same, and neither is the carpet.|Salty, twisty, and endlessly snackable. Mustard is your new best friend.
+Have butterflies for hair|Have a rainbow for a shadow|Your hairdo flutters off a little each time you laugh.|Everywhere you walk, your shadow shows off in technicolor.
+Always find a coin when you look down|Always find a cookie when you open a drawer|You become surprisingly rich in small change.|Every desk becomes a snack stash. Best surprise ever.
+Be a chef at a fancy restaurant|Be a pilot flying around the world|Your signature dish earns rave reviews and a whole lot of fans.|You wave to clouds from the cockpit and collect airport snacks everywhere.
+Have your own island|Have your own mountain|You name every palm tree and own a very private beach.|You rule the peak and every sunrise hits you first.
+Have a pocket-sized dinosaur|Have a pocket-sized robot|Your dino roars politely and prefers tiny leaves for lunch.|Your robot beeps hello, then helps you find your keys.
+Swim as fast as a dolphin|Climb as well as a monkey|You zip through the pool and win every race by a landslide.|Playground trees and rock walls are suddenly your favorite spots.
+Never feel cold|Never feel hot|You build snowmen in short sleeves and laugh at the frost.|You sunbathe on the hottest day and keep your cool like a champion.
+Open a bakery|Open a bookstore|The whole street smells like fresh cinnamon rolls every morning.|Every cozy corner has a reading nook and a comfy chair.
+Be able to make any plant grow instantly|Be able to make any food appear instantly|Your balcony becomes a jungle in about five minutes.|Midnight snacks arrive in a flash, no cooking required.
+Have a month-long vacation every year|Have a three-day weekend every week|You trade your alarm clock for sunscreen and seashells.|Every Monday becomes a bonus Sunday and everyone loves you for it.
+Wear pajamas all day, every day|Wear your favorite costume all day, every day|Comfort is king, and slippers are the dress code.|Every grocery trip becomes a parade and nobody blinks twice.
+Have the ability to speak to ghosts|Have the ability to speak to robots|The old house finally tells its funniest stories.|Your toaster admits it has been secretly judging your bread choices.
+Have a pool of jelly|Have a pool of bouncy balls|You wobble to the edge and bounce back like a champion.|You dive in and pop up in a sea of colors and giggles.
+Know how to play every instrument|Know how to speak every animal language|You start a one-person band and sell out the stadium.|You host the world's most chatty animal meeting.
+Have a movie made about your life|Have a theme park built in your honor|The soundtrack is excellent, and so is your hair in every scene.|There is a roller coaster named after you. Every ride has a loop.
+Eat a spoonful of hot sauce|Eat a spoonful of wasabi|You turn into a tiny volcano and can't stop smiling afterward.|You get the world's quickest sinus clear and a very watery eye.
+Be a master of disguise|Be a master of escape|You show up at your own party as a surprise guest.|You wriggle out of any tricky situation and take a bow.
+Have a bubble that carries you anywhere|Have a carpet that flies you anywhere|You float over rooftops and wave at squirrels on the way.|You glide through the sky on a magic rug, no seatbelt needed.
+Have a pet that can talk|Have a pet that can juggle|Your cat tells you exactly what it thinks of the new couch.|Your hamster performs with three tiny balls and wins the talent show.
+Live in a lighthouse|Live in a windmill|You guide the ships home and watch storms roll in from your window.|You grind your own flour and wake up to the slow spin of the blades.
+Always have a clean room|Always have a full phone battery|Your stuff stays tidy and so does your mind. Friends are in awe.|You never fear a surprise 1 percent, and photos are always on point.
+Have a hidden talent for magic|Have a hidden talent for painting|You pull a rabbit out of a hat. Everyone at the party gasps.|Your sketches get framed, and your fridge becomes a gallery.
+Have the world's biggest trampoline|Have the world's tallest slide|You bounce over mountains and wave at airplanes passing by.|You slide for a full minute and arrive with a ten out of ten grin.
+Wake up every day to a surprise|Go to bed every night with a bedtime story|The surprise could be pancakes, a puppy, or a brand new sunrise.|You drift off to dragons, castles, and happy endings every single night.
+Have an endless supply of stickers|Have an endless supply of balloons|Every notebook, bottle, and backpack gets a delightful makeover.|Every Tuesday turns into a birthday, and floating is mandatory.
+Ride a roller coaster every day|Ride a hot air balloon every day|You scream with joy, throw your hands up, and never lose your lunch.|You float above fields and discover the quietest view in the world.
+Have a house made of cardboard|Have a house made of glass|It is cozy, recyclable, and you can decorate it with markers.|The sunlight pours in, but you have to keep the place spotless!
+Be an expert at every sport|Be an expert at every video game|You collect every trophy and still have time for a victory snack.|You top every leaderboard and your controller deserves a medal.
+Have cloud-soft pillows everywhere|Have always-warm blankets everywhere|Every nap becomes a trip to the most comfortable place ever.|Every chilly morning is cozy, and sweaters are optional.
+Get free pizza for life|Get free movie tickets for life|You become the neighborhood legend, and your fridge is never empty.|You see every blockbuster on opening night with extra popcorn.
+Have the power to grow giant|Have the power to shrink small|You peek over mountains and use a lamp post as a back scratcher.|You ride on a ladybug and hide in the world's best fort.
+Speak in rhymes all day|Speak in a robot voice all day|Your whole day turns into a poem, and everyone claps at lunch.|Beep boop! Even ordering a sandwich sounds like an adventure.
+Own a pet turtle that lives forever|Own a pet parrot that lives forever|Your turtle keeps a slow and steady pace and learns all your secrets.|Your parrot inherits your jokes and repeats them for generations.
+Have a snowball fight in July|Have a beach day in January|You throw snowballs while wearing sunglasses and sandals.|You build a snow castle on the sand. Seashells make perfect snowman buttons.
+Have a mini fridge always stocked with your favorite drink|Have a snack drawer that never empties|You always have the perfect refreshment, with ice cold perfection.|Midnight munchies are solved forever, and crumbs are a tiny price to pay.
+Be able to dance like a pro|Be able to sing like a pop star|The dance floor clears and every phone camera turns your way.|You shower in a standing ovation, and your hairbrush becomes a microphone.
+Discover a new planet|Discover a new animal|You get to name it something ridiculous and everyone has to say it.|It turns out to be fluffy, a little silly, and extremely popular.
+Have a yard full of puppies|Have a yard full of kittens|Wiggly tails, wet noses, and the best welcome home ever.|Soft purrs, tiny pounces, and loads of cozy naps in the sun.
+Have a pet cloud that rains on command|Have a pet star that glows on command|Your garden has never been so happy, and puddles are always available.|Your nightlight is cosmic, and bedtime comes with a sparkle.
+Be able to stretch like rubber|Be able to bounce like a ball|You reach the top shelf without a stool and still fit in the toy cupboard.|You never fear a fall and you always land with a springy grin.
+Eat a giant cookie|Eat a giant donut|You share it with the whole street and still get the biggest crumb.|You wear it as a hat for photos before taking the first bite.
+Have a treehouse with a zip line|Have a backyard with a tiny roller coaster|You glide down to the garden in seconds with the wind in your hair.|You are the neighborhood hero and the line stretches down the block.
+Be a pirate captain|Be a space captain|You hunt for treasure with a parrot who gives terrible directions.|You chart a course through the stars with a crew of friendly robots.
+Know the answer to every quiz question|Know the lyrics to every song|You win every trivia night and politely let others have a turn.|You sing along to anything the radio plays and impress every road trip.
+Always have perfect weather|Always have perfect traffic lights|Every picnic, parade, and park day is golden.|You glide through town on a wave of green lights and good vibes.
+Own a bookshop with a cat|Own a cafe with a dog|The cat naps on bestsellers and judges customers kindly.|The dog greets everyone with a tail wag and a free biscuit.
+Have a snow day every Friday|Have a beach day every Saturday|You build forts and sip cocoa before the weekend even starts.|You collect shells, build sandcastles, and sunburn only a little.
+Be able to talk to your toys|Be able to talk to your shoes|They gossip about everyone's adventures and ask for a better bedtime.|They complain about puddles but love a good, long hike.
+Eat only sweet food|Eat only salty food|Your fruit game is strong and your candy drawer is a shrine.|Chips, pretzels, and popcorn are your daily bread.
+Swim with sharks|Soar with eagles|You glide through the reef beside the sea's sleek hunters.|You ride warm winds high over the mountains.
+Have a button that makes it snow|Have a button that makes it rain candy|The whole town gets a snow day and you become a legend.|Gumdrops fall from the sky, and umbrellas turn into candy buckets.
+Have a photographic memory|Have a super imagination|You never forget a face, a fact, or a friend's birthday.|Every rainy day becomes a movie, an adventure, or a comic book.
+Be a little taller|Be a little faster|You reach the top shelf and spot parades over the crowd.|You win the shoe-tying race and catch the bus every time.
+Go on a safari|Go on a deep sea dive|You spot lions, zebras, and a very photogenic giraffe.|You glide past coral gardens and wave at a curious sea turtle.
+Have a talking mirror|Have a talking clock|It compliments your hair and always tells you your best angle.|It reminds you the cookies come out in three minutes and also to hurry up.
+Have a lifetime supply of socks|Have a lifetime supply of hats|Your toes stay toasty and none of them ever mismatch.|Every day is a new look, and you are never short on style.
+Wear a superhero cape every day|Wear a wizard hat every day|People wave at you and ask for autographs on the sidewalk.|The pointy hat gets compliments and a few puzzled stares.
+Have a hot air balloon ride every weekend|Have a train ride across the country every year|You drift over patchwork fields and wave at cows far below.|You watch the scenery change from your window with a snack in hand.
+Find a treasure chest|Find a hidden cave|You open it to discover gold coins, shiny gems, and a mysterious map.|You explore tunnels glittering with crystals and echoing with secrets.
+Be best friends with a dragon|Be best friends with a giant|You travel the sky together and never worry about the dragon's breath.|You never lose anything on a high shelf and get a ride in a very big pocket.
+Have a secret hideout in the woods|Have a secret hideout under the sea|You collect leaves, twigs, and a pretty good view of the sunrise.|Your hideout has porthole windows and a very curious octopus neighbor.
+`, ['a', 'b', 'resultA', 'resultB']);
+
+const RIDDLE_ENTRIES = parsePool(`
+I have keys but open no locks; I have a lot of hammers but build nothing; I can make music without a voice|A piano
+I have a face but no eyes; I have hands but cannot clap; I tick all day long|A clock
+I have a mouth but never eat; I have a bed but never sleep; I run all day but never walk|A river
+I have a neck but no head; I wear a cap; I hold your drink|A bottle
+I have teeth but never bite; I help tame tangled hair; I live in a bathroom drawer|A comb
+I have one eye but cannot see; I help mend your clothes; I pull thread through cloth|A needle
+I get wetter the more I dry; I hang on a rack; I am soft and fluffy|A towel
+I can travel the world while staying in one corner; I get licked before a long trip; I carry letters|A stamp
+I am full of holes but still hold water; I soak up spills; I live near the kitchen sink|A sponge
+I have a ring but no finger; I carry your voice across a distance; I used to hang on the wall|A telephone
+I have cities but no houses; I have forests but no trees; I can be folded and put in a glove box|A map
+I have a spine but no bones; I have pages but no leaves; I can take you to faraway worlds|A book
+I have four legs but I cannot walk; I hold your dinner; family gathers around me|A table
+I have a heart that never beats; I am a leafy vegetable that is a popular salad base; my layers form a head|A cabbage
+I have branches but no trunk, no leaves, and no fruit; people deposit money with me; I stand on many street corners|A bank
+I fall without being hurt; I make puddles; I turn flowers into a feast|Rain
+I am light as a feather yet the strongest man cannot hold me for more than a few minutes; you do me every second of your life; I fill your lungs|Breath
+I have no wings but I fly; I have no eyes but I cry; wherever I go darkness follows|A cloud
+I have a bark but no bite; I have rings but no fingers; I give shade on hot days|A tree
+I shine in the night but I am not a lamp; I change shape through the month; I pull the tides|The moon
+I am always hungry; I must always be fed; the finger I touch will soon turn red|Fire
+I can be cracked, made, told, and played; people laugh when I land well; I am usually short|A joke
+I have a thumb and four fingers; I keep your hands warm; I come in pairs|A glove
+I am tall when I am young and short when I am old; I give light; I melt as I work|A candle
+I can fill a room but take up no space; I help you read at night; I travel faster than anything|Light
+I live in a shell and carry my home on my back; I am slow but steady; I leave a silver trail|A snail
+I am black and white and read all over; I arrive each morning; I have headlines|A newspaper
+I have a tail and a head but no body; I am flipped to settle arguments; I am worth a few cents|A coin
+I have four wheels and flies; I visit your curb once a week; I am loud and smell funny|A garbage truck
+I start with an e and end with an e but contain only one letter; I carry your mail; you seal me with a lick|An envelope
+I go up when the rain comes down; I keep you dry; I fold into a stick|An umbrella
+I have an eye but cannot see; I appear in the middle of a storm; I am calm in the center|A hurricane
+I have a trunk but no suitcase; I have big ears; I never forget|An elephant
+I have a mane but I am not a horse; I roar loud; I rule the savanna|A lion
+I have spots but I am not sick; I stretch my neck to reach leaves; I am the tallest animal|A giraffe
+I have stripes but I am not a flag; I run across the plains; people say I look like a painted horse|A zebra
+I have eight legs and a web; I am small; I catch flies|A spider
+I live in a hive; I make something sweet; I can sting once|A bee
+I have a pouch for my baby; I hop all day; I come from Australia|A kangaroo
+I am white and black and waddle on ice; I cannot fly but I swim; I wear a tuxedo|A penguin
+I have a hump or two; I trek across deserts; I store fat, not water|A camel
+I have a shell but no house; I carry my home; I race a hare in a famous story|A turtle
+I have fins but I am no fish; I leap over waves; I am clever and friendly|A dolphin
+I have tentacles but no arms; I squirt ink; I live in the sea and have three hearts|An octopus
+I hatch from an egg and crawl; I wrap myself in a cocoon; I emerge with colorful wings|A butterfly
+I have a horn but no band; I charge when I am angry; I am huge and gray|A rhinoceros
+I have scales but no weighing; I live in water; I breathe through gills|A fish
+I have a beak but no mouth; I lay eggs; I sing at dawn|A rooster
+I have a long neck and long legs; I stand on one leg; I am pink|A flamingo
+I come in many colors; I paint the sky after rain; you can never reach my end|A rainbow
+I am a ball of fire; I rise in the east; I set in the west|The sun
+I have no voice but I tell stories; I have thousands of friends on a shelf; I am a place for borrowing|A library
+I am tall and cold and white; I come in winter; children roll me into balls|Snow
+I am a flower named for an animal's jaws; I snap; I come in many colors|A snapdragon
+I am a fruit that is also a color; I am round and sweet; I keep doctors away, they say|An orange
+I am red when ripe; I grow on vines; people call me a fruit but I am put in salads|A tomato
+I am yellow; I have a peel; monkeys love me|A banana
+I am green outside and red inside; I am juicy in summer; people spit my seeds|A watermelon
+I have a core and a stem; I come in red and green; teachers get me as a gift|An apple
+I am frozen sweet cream; I come in a cone; I melt in the sun|Ice cream
+I am round and flat; I have cheese and sauce; I am cut into triangles|A pizza
+I am made from milk; I come in blocks and slices; I am loved by mice|Cheese
+I am hot and brown and drunk in the morning; I wake you up; I come from beans|Coffee
+I am sweet and sticky; I come from flowers; bees make me|Honey
+I am a sandwich filling and a sticky spread; I am made from crushed nuts; I pair with jelly|Peanut butter
+I have two wheels and a chain; you pedal me; I keep you balanced|A bicycle
+I have four wheels and an engine; I take you places; you must buckle up|A car
+I have a hull and a mast; I sail on water; I need wind|A sailboat
+I have a cockpit and wings; I fly above clouds; you board me at an airport|An airplane
+I run on tracks; I make a loud whistle; I carry passengers and cargo|A train
+I have a siren and a flashing light; I rush to emergencies; I carry patients|An ambulance
+I have a screen and keys; I can store files; I can browse the web|A computer
+I have a lens and a flash; I freeze moments; people say cheese for me|A camera
+I have a handle and a head; I pound nails; I am found in a toolbox|A hammer
+I have blades but I do not fly; I cut paper; I come in pairs and open and close|Scissors
+I have a point and I leave a mark; I need sharpening; I have an eraser at my end|A pencil
+I have a lens and I help you see; I sit on your nose; I come in pairs with arms|Glasses
+I have a beam and a base; I shine over the sea; ships rely on me to get home|A lighthouse
+I have a bell and a tower; I tell the time; I stand in a town square|A clock tower
+I have a bell and three valves; you blow into me; I sound like a fanfare|A trumpet
+I have a skin but no body; you beat me with sticks; I keep the rhythm|A drum
+I make you sneeze; I am found in spring; bees visit me; I come from flowers|Pollen
+I have a shadow and a dial; I tell time without batteries; I need the sun|A sundial
+I show you a face but I am not alive; I copy every move you make; I hang on walls and break into shards|A mirror
+I follow you in the sun; I am longest at sunrise; I vanish at midnight|A shadow
+I repeat what you say but have no mouth; I live in canyons and caves; I answer your shout|An echo
+I am oval and have a shell; I can be scrambled or fried; chickens lay me|An egg
+I have rungs but no door; I help you reach high places; I lean against a wall|A ladder
+I have a frame and a pane; you look through me; I let in light but keep out rain|A window
+I have a knob and hinges; I open and close; I stand between rooms|A door
+I have teeth but I do not eat; I fit a lock; I jingle on a ring|A key
+I hold secrets inside; you use a combination or a key; I keep things safe|A lock
+I am soft and square; I rest your head; I live on your bed|A pillow
+I am warm and wrap you up; I come in every color; I keep you cozy at night|A blanket
+I come in pairs and cover your feet; I get lost in the laundry; I sit inside your shoes|A sock
+I am a toy that dances in the wind; I have a long string; I need a breezy hill|A kite
+I am filled with air and I float; I pop with a bang; I decorate birthday parties|A balloon
+I am round and shiny and fragile; I float and shimmer; I pop when touched|A bubble
+I am white and round and have a carrot nose; I melt in spring; kids build me in winter|A snowman
+I have a crater and a fiery temper; I erupt with lava; I rise from the earth|A volcano
+I am salty and deep; I have waves and tides; I cover most of the planet|The ocean
+I am surrounded by water; I have palm trees; castaways are found on me|An island
+I am very tall and rocky; I have a peak; climbers aim for my top|A mountain
+I have sand and sun; I hold oases; camels cross me|A desert
+I am green and prickly; I live where it is dry; I store water in my arms|A cactus
+I rumble in the sky; I follow lightning; I make dogs hide under beds|Thunder
+I flash across the sky; I am hotter than the sun's surface; I strike before the rumble|Lightning
+I move leaves and fly kites; I cannot be seen but you can feel me; I can be a breeze or a gale|The wind
+I hang between two trees; I swing gently; I am perfect for a lazy afternoon|A hammock
+I make bubbles and wash away dirt; I come in bars or liquid; I live by the sink|Soap
+I have bristles and clean your teeth; I live in a cup by the sink; I need paste|A toothbrush
+I scoop soup and stir cereal; I am shaped like a small bowl on a stick; I sit next to a fork|A spoon
+I have a needle and a thread; I hold tiny hats; I live in a sewing box|A thimble
+I pull metal toward me; I stick to the fridge; I have two poles|A magnet
+I power your remote; I come in AA and AAA; I have a plus and a minus|A battery
+I beep and blink; I can be built or bought; I follow programmed commands|A robot
+I blast off with fire; I carry astronauts; I leave the planet|A rocket
+I orbit the earth but I am not a moon; I send TV signals; I was built by people|A satellite
+I wear a helmet and a suit; I float in zero gravity; I have walked on the moon|An astronaut
+I have a needle that always points north; I help hikers find the way; I fit in your pocket|A compass
+I am heavy and sink to the bottom; I keep a boat from drifting; I am dropped from the deck|An anchor
+I look at faraway stars; I have a long tube and a lens; I help you see the planets|A telescope
+`, ['clues', 'answer']).map(r => ({ clues: r.clues.split(';').map(c => c.trim()), answer: r.answer }));
+
+const TRIVIA_ENTRIES = parsePool(`
+What is the largest planet in our solar system?|Jupiter|Saturn|Neptune|Earth
+What is the capital of France?|Paris|Lyon|Marseille|Nice
+How many continents are there on Earth?|Seven|Five|Six|Eight
+What is the hardest natural substance on Earth?|Diamond|Gold|Iron|Quartz
+Which animal is known as the king of the jungle?|Lion|Tiger|Elephant|Leopard
+What gas do plants absorb from the air?|Carbon dioxide|Oxygen|Nitrogen|Helium
+How many sides does a hexagon have?|Six|Five|Seven|Eight
+Which planet is known as the Red Planet?|Mars|Venus|Mercury|Jupiter
+What is the largest ocean on Earth?|The Pacific Ocean|The Atlantic Ocean|The Indian Ocean|The Arctic Ocean
+Which is the tallest animal in the world?|Giraffe|Elephant|Camel|Ostrich
+What is the freezing point of water in degrees Celsius?|0|10|32|100
+Which country is home to the kangaroo?|Australia|South Africa|Brazil|India
+What is the chemical symbol for water?|H2O|CO2|O2|NaCl
+How many legs does a spider have?|Eight|Six|Ten|Four
+Which planet has the most prominent rings?|Saturn|Mars|Venus|Mercury
+What is the largest mammal in the world?|Blue whale|African elephant|Giraffe|Hippopotamus
+Which fruit is traditionally used to make guacamole?|Avocado|Banana|Mango|Papaya
+How many minutes are in an hour?|60|50|100|30
+Which bird is famous for being unable to fly but excellent at swimming?|Penguin|Eagle|Sparrow|Parrot
+What is the capital of Japan?|Tokyo|Kyoto|Osaka|Nagoya
+How many days are in a leap year?|366|365|364|367
+Which instrument has black and white keys?|Piano|Guitar|Violin|Flute
+What is the smallest prime number?|2|1|3|0
+Which planet is closest to the Sun?|Mercury|Venus|Earth|Mars
+Who painted the Mona Lisa?|Leonardo da Vinci|Pablo Picasso|Vincent van Gogh|Claude Monet
+What is the largest desert in the world, including polar deserts?|Antarctica|The Sahara|The Gobi|The Arabian Desert
+How many players are on a soccer team on the field?|Eleven|Nine|Ten|Twelve
+Which ocean lies on the west coast of the United States?|The Pacific Ocean|The Atlantic Ocean|The Indian Ocean|The Arctic Ocean
+What is the main language spoken in Brazil?|Portuguese|Spanish|English|French
+How many strings does a standard guitar have?|Six|Four|Five|Eight
+What do bees collect from flowers?|Nectar|Water|Sand|Leaves
+What is the capital of Italy?|Rome|Milan|Venice|Naples
+Which gas makes up most of Earth's atmosphere?|Nitrogen|Oxygen|Carbon dioxide|Hydrogen
+How many colors are in a rainbow?|Seven|Five|Six|Eight
+Which animal is the fastest on land?|Cheetah|Lion|Horse|Greyhound
+What is the name of the closest star to Earth?|The Sun|Sirius|Polaris|Alpha Centauri
+What is the largest bone in the human body?|Femur|Skull|Ribs|Spine
+Which season comes after winter?|Spring|Summer|Autumn|Monsoon
+How many hours are in a day?|24|12|36|48
+What is the capital of Canada?|Ottawa|Toronto|Vancouver|Montreal
+Which planet is known for its Great Red Spot?|Jupiter|Mars|Saturn|Neptune
+What is the primary ingredient in bread?|Flour|Rice|Sugar|Salt
+Which sport uses a racket and a shuttlecock?|Badminton|Tennis|Squash|Table tennis
+What shape is a stop sign?|Octagon|Hexagon|Circle|Square
+What is the capital of Australia?|Canberra|Sydney|Melbourne|Perth
+What is the boiling point of water in degrees Celsius?|100|90|120|212
+Which organ pumps blood through the human body?|The heart|The lungs|The liver|The kidney
+What do caterpillars turn into?|Butterflies|Beetles|Bees|Ants
+How many wheels does a standard bicycle have?|Two|Three|Four|One
+Which country gave the Statue of Liberty to the United States?|France|Spain|England|Italy
+What is the longest river in South America?|The Amazon|The Orinoco|The Parana|The Magdalena
+What do you call a baby kangaroo?|Joey|Cub|Calf|Pup
+What is the largest planet in our solar system after Jupiter?|Saturn|Uranus|Neptune|Mars
+How many seconds are in a minute?|60|100|30|90
+Which metal is liquid at room temperature?|Mercury|Iron|Lead|Copper
+What is the capital of Egypt?|Cairo|Alexandria|Giza|Luxor
+Which sea creature has eight arms?|Octopus|Squid|Jellyfish|Starfish
+What is the national animal of Australia, often seen on its coat of arms?|Kangaroo|Koala|Emu|Dingo
+What is the first month of the year?|January|February|December|March
+Which scientist proposed the theory of general relativity?|Albert Einstein|Isaac Newton|Galileo Galilei|Nikola Tesla
+What are the three primary colors?|Red, blue, and yellow|Red, green, and orange|Blue, green, and purple|Yellow, pink, and black
+How many bones does an adult human have?|206|150|300|412
+Which animal produces wool?|Sheep|Cow|Pig|Goat
+What is the capital of Spain?|Madrid|Barcelona|Seville|Valencia
+Which month has the fewest days?|February|April|June|September
+What is the main ingredient in sushi rice?|Rice|Wheat|Corn|Barley
+What is the world's largest rainforest?|The Amazon|The Congo|Daintree|Borneo
+Which planet is farthest from the Sun?|Neptune|Uranus|Saturn|Pluto
+How many teeth does an adult human typically have?|32|28|36|40
+What is the hottest planet in our solar system?|Venus|Mercury|Mars|Jupiter
+What do you call a group of lions?|A pride|A herd|A flock|A pack
+Which mountain is the tallest above sea level?|Mount Everest|K2|Kilimanjaro|Denali
+What instrument do you play with a bow?|Violin|Drum|Trumpet|Piano
+What is the main gas in the Sun?|Hydrogen|Oxygen|Helium|Nitrogen
+How many planets are in our solar system?|Eight|Nine|Seven|Ten
+What is the capital of Germany?|Berlin|Munich|Hamburg|Frankfurt
+Which animal is known for its black and white stripes?|Zebra|Tiger|Skunk|Panda
+What is the largest country in the world by area?|Russia|Canada|China|United States
+Which language has the most native speakers in the world?|Mandarin Chinese|English|Spanish|Hindi
+What is the tallest building in the world as of recent years?|Burj Khalifa|Empire State Building|Eiffel Tower|Shanghai Tower
+How many sides does a triangle have?|Three|Four|Five|Two
+What is the freezing point of water in Fahrenheit?|32|0|100|212
+Which famous ship sank in 1912 after hitting an iceberg?|Titanic|Lusitania|Bismarck|Endeavour
+What is the smallest ocean in the world?|The Arctic Ocean|The Indian Ocean|The Southern Ocean|The Atlantic Ocean
+Which gas do humans need to breathe to survive?|Oxygen|Nitrogen|Carbon dioxide|Helium
+Which vitamin do we get from sunlight?|Vitamin D|Vitamin C|Vitamin A|Vitamin B12
+What is the capital of Brazil?|Brasilia|Rio de Janeiro|Sao Paulo|Salvador
+What is the study of living things called?|Biology|Geology|Astronomy|Chemistry
+How many hearts does an octopus have?|Three|One|Two|Eight
+Which planet spins on its side?|Uranus|Mars|Venus|Jupiter
+What is the biggest land animal?|African elephant|Rhinoceros|Giraffe|Hippopotamus
+What is the currency of Japan?|Yen|Won|Yuan|Ringgit
+Which animal's milk is used to make traditional mozzarella?|Buffalo|Camel|Horse|Rabbit
+What do you call a word that means the opposite of another word?|Antonym|Synonym|Homonym|Acronym
+What is 12 multiplied by 12?|144|124|122|148
+Which sense organ is responsible for balance?|The inner ear|The eye|The nose|The tongue
+What is the capital of Mexico?|Mexico City|Guadalajara|Cancun|Monterrey
+Which ancient wonder was located in Egypt and still stands today?|The Great Pyramid of Giza|The Hanging Gardens|The Colossus of Rhodes|The Lighthouse of Alexandria
+What is a baby dog called?|Puppy|Kitten|Cub|Foal
+Which element has the chemical symbol Au?|Gold|Silver|Copper|Aluminum
+What is the longest bone in the human arm?|Humerus|Femur|Tibia|Clavicle
+What instrument measures temperature?|Thermometer|Barometer|Speedometer|Odometer
+Which continent is the Sahara Desert in?|Africa|Asia|South America|Australia
+What is the capital of Argentina?|Buenos Aires|Santiago|Lima|Montevideo
+How many zeros are in one million?|Six|Five|Seven|Four
+Which country is home to the Great Barrier Reef?|Australia|Mexico|Indonesia|Philippines
+Which bird is a symbol of peace?|Dove|Eagle|Owl|Hawk
+`, ['q', 'correct', 'w1', 'w2', 'w3']);
+
+const FACT_ENTRIES = parsePool(`
+octopuses|An octopus has three hearts, and two of them stop beating when it swims.
+honey|Honey never spoils. Edible honey has been found in ancient Egyptian tombs thousands of years old.
+bananas|Bananas are berries, but strawberries are not.
+Venus|A day on Venus is longer than its year. It spins so slowly that one rotation takes longer than one trip around the Sun.
+wombats|Wombats produce cube-shaped droppings, which keeps them from rolling away.
+the Eiffel Tower|The Eiffel Tower can grow about 15 centimeters taller in summer because heat makes the iron expand.
+sharks|Sharks have been around longer than trees. They are over 400 million years old.
+lightning|Lightning is about five times hotter than the surface of the Sun.
+flamingos|Flamingos are born gray or white. Their pink color comes from the carotenoids in their food.
+the human body|Your body has about 37 trillion cells, and your stomach lining replaces itself every few days.
+sloths|Sloths can hold their breath for up to 40 minutes underwater by slowing their heart rate.
+the Moon|The Moon drifts away from Earth by about 3.8 centimeters every year.
+butterflies|Butterflies taste with their feet.
+hummingbirds|Hummingbirds are the only birds that can fly backward.
+Mount Everest|Mount Everest grows a few millimeters taller each year as tectonic plates push the Himalayas upward.
+cats|A group of cats is called a clowder.
+trees|Trees can share nutrients through underground fungal networks sometimes called the wood wide web.
+the Pacific Ocean|The Pacific Ocean is bigger than all of Earth's land put together.
+goldfish|Goldfish can see ultraviolet and infrared light that humans cannot.
+peanuts|Peanuts are not nuts. They are legumes that grow underground, like beans and lentils.
+dolphins|Dolphins sleep with half of their brain at a time so they can keep breathing.
+the Sun|The Sun makes up about 99.8 percent of all the mass in our solar system.
+koalas|Koalas have fingerprints that are almost impossible to tell apart from human ones.
+Antarctica|Antarctica is the driest continent, even though it holds most of the world's fresh water as ice.
+owls|An owl cannot move its eyes, so it turns its head up to 270 degrees to look around.
+pineapples|A pineapple plant takes about two years to produce a single pineapple.
+water|Hot water can sometimes freeze faster than cold water, a mystery known as the Mpemba effect.
+crows|Crows can recognize human faces and hold grudges for years.
+cows|Cows have best friends and get stressed when they are separated from them.
+the Great Wall of China|The Great Wall is not one continuous wall. It is a series of walls and fortifications built over many centuries.
+bamboo|Some bamboo species can grow almost a meter in a single day.
+Jupiter|Jupiter's Great Red Spot is a storm that has been raging for at least 300 years.
+elephants|Elephants are among the few animals that can recognize themselves in a mirror.
+tomatoes|Tomatoes were once believed by some Europeans to be poisonous.
+the Dead Sea|The Dead Sea is so salty that people float on its surface without trying.
+penguins|Emperor penguins huddle together and take turns standing on the cold outer edge to stay warm.
+chocolate|Cacao beans were once used as money by the Aztecs.
+jumping spiders|Some jumping spiders can see ultraviolet light and plan their route before they leap.
+rainbows|A rainbow is actually a full circle. We only see an arc because the ground gets in the way.
+bats|Bats are the only mammals capable of true, sustained flight.
+the Amazon rainforest|The Amazon rainforest is home to roughly 10 percent of all the species known to science.
+snails|Snails can sleep for up to three years if conditions are too dry.
+Saturn|Saturn is so light for its size that it would float in a bathtub big enough to hold it.
+lobsters|Lobsters taste with their legs and chew with their stomachs.
+earthquakes|Earth has hundreds of thousands of detectable earthquakes every year, though most are too small to feel.
+sunflowers|Young sunflowers turn to follow the Sun across the sky each day.
+the brain|Your brain uses about 20 percent of your body's energy even though it is only about 2 percent of your weight.
+sea otters|Sea otters hold hands while sleeping so they do not drift apart.
+the Sahara|The Sahara was once green, with lakes and grasslands, around 6,000 years ago.
+rubber ducks|In 1992, thousands of bath toys fell off a cargo ship and drifted across the oceans for years, helping scientists study currents.
+astronauts|Astronauts can grow up to a few centimeters taller in space because their spines stretch without gravity.
+the moon landing|There is no wind on the Moon, so the footprints left by astronauts could last for millions of years.
+giraffes|Giraffes have the same number of neck bones as humans, seven, but each one is much longer.
+strawberries|Strawberries are the only fruit with seeds on the outside, about 200 of them on average.
+ants|An ant can carry many times its own body weight.
+walruses|A walrus can eat thousands of clams in one sitting.
+the internet|The first message sent over the early internet in 1969 was just two letters before the system crashed.
+rain|The smell of rain has a name, petrichor, and it comes from oils released by plants and soil.
+turtles|Some turtles can breathe through their rear ends while hibernating underwater.
+clouds|A typical fluffy cumulus cloud can weigh around a million pounds, about as much as a hundred elephants.
+dogs|A dog's nose print is as unique as a human fingerprint.
+the Olympics|The ancient Olympic Games were held for over a thousand years in Greece.
+pigeons|Pigeons can learn to tell paintings by Monet apart from paintings by Picasso.
+glass|Glass is not a slow-flowing liquid. Old windowpanes appear thicker at the bottom because of how they were made.
+diamonds|Diamonds can form from carbon under extreme heat and pressure about 150 kilometers underground.
+seahorses|The male seahorse is the one who gives birth to the babies.
+the Milky Way|Our galaxy, the Milky Way, contains hundreds of billions of stars.
+cheetahs|A cheetah can go from zero to 100 kilometers per hour in about three seconds.
+bees|A single honeybee makes only about one-twelfth of a teaspoon of honey in her whole life.
+deserts|Some deserts, like the Gobi, get cold enough for snow in winter.
+volcanoes|There are volcanoes under the ocean that are taller than most mountains on land.
+fireflies|Fireflies are not flies. They are beetles, and their glow produces almost no heat.
+jellyfish|Jellyfish have no brain, no heart, and no bones, and they have existed for over 500 million years.
+camels|A camel's hump stores fat, not water.
+lions|A lion's roar can be heard from up to eight kilometers away.
+the Arctic|In summer the Arctic can have 24 hours of daylight, called the midnight sun.
+spaghetti|Spaghetti is plural. One strand is called a spaghetto.
+hippos|Hippos secrete a reddish-orange fluid that acts like a natural sunscreen and helps protect their skin.
+mosquitoes|Only female mosquitoes bite. Males feed on nectar.
+sloth bears|Sloth bears can close their nostrils to keep out ants and dust while digging for termites.
+elephants|An elephant's trunk has tens of thousands of muscle units and can pick up a single peanut or a heavy log.
+the heart|Your heart beats around 100,000 times a day without ever taking a break.
+bristlecone pines|Some bristlecone pines are thousands of years old, among the oldest living things on Earth.
+the Earth|Earth is the only planet in our solar system not named after a god.
+popcorn|Popcorn kernels pop when the water inside turns to steam and the shell bursts.
+the Atlantic|The Atlantic Ocean is slowly getting wider by a few centimeters every year.
+tigers|No two tigers have the same stripe pattern, and their skin is striped too, not just their fur.
+whales|The blue whale is the largest animal ever known, bigger than any dinosaur.
+Mars|Mars has the tallest volcano in the solar system, Olympus Mons, about two and a half times the height of Mount Everest.
+oak trees|An oak tree can produce thousands of acorns in a year, but only a few ever grow into trees.
+snowflakes|Every snowflake has six sides, but no two are exactly alike in detail.
+tardigrades|Tiny tardigrades, called water bears, can survive freezing, boiling, and even the vacuum of space.
+tongues|A chameleon's tongue can be longer than its entire body and shoots out in a fraction of a second.
+bones|Babies are born with about 300 bones, but adults end up with 206 because many bones fuse together.
+sound|Sound travels about four times faster through water than through air.
+gold|All the gold ever mined would fit into a cube roughly 22 meters on each side.
+caterpillars|A caterpillar has hundreds of muscles, many more than a human has in the whole body.
+sunlight|Sunlight takes about eight minutes to reach Earth.
+polar bears|A polar bear's skin is actually black, and its fur is clear, not white.
+coral reefs|Coral reefs cover less than one percent of the ocean floor but support about a quarter of all marine species.
+eyes|Humans blink around 15 to 20 times a minute, which adds up to millions of blinks every year.
+rivers|The Nile and the Amazon are often argued over as the longest river, depending on how you measure.
+`, ['topic', 'fact']);
+
+const JOKE_ENTRIES = parsePool(`
+Why did the scarecrow win an award?|Because he was outstanding in his field.
+What do you call a fake noodle?|An impasta.
+Why don't eggs tell jokes?|They'd crack each other up.
+What do you call cheese that isn't yours?|Nacho cheese.
+Why did the bicycle fall over?|It was two tired.
+What do you call a bear with no teeth?|A gummy bear.
+Why can't you give Elsa a balloon?|Because she will let it go.
+What did the ocean say to the beach?|Nothing, it just waved.
+Why did the math book look so sad?|Because it had too many problems.
+What do you call a sleeping bull?|A bulldozer.
+Why do bees have sticky hair?|Because they use honeycombs.
+What did one wall say to the other wall?|I'll meet you at the corner.
+Why did the cookie go to the doctor?|Because it felt crummy.
+What do you call a dinosaur that crashes his car?|Tyrannosaurus wrecks.
+Why was the broom late?|It overswept.
+What do you call a snowman with a six-pack?|An abdominal snowman.
+Why did the golfer bring two pairs of pants?|In case he got a hole in one.
+What did the left eye say to the right eye?|Between you and me, something smells.
+Why can't a nose be 12 inches long?|Because then it would be a foot.
+What do you call a pig that does karate?|A pork chop.
+Why did the tomato turn red?|Because it saw the salad dressing.
+What do you call a boomerang that doesn't come back?|A stick.
+How do you organize a space party?|You planet.
+Why did the student eat his homework?|Because the teacher said it was a piece of cake.
+What do you call a fish wearing a bowtie?|Sofishticated.
+Why do cows wear bells?|Because their horns don't work.
+What did the grape say when it got stepped on?|Nothing, it just let out a little wine.
+Why did the music teacher need a ladder?|To reach the high notes.
+What kind of tree fits in your hand?|A palm tree.
+Why did the picture go to jail?|Because it was framed.
+What do you call a lazy kangaroo?|A pouch potato.
+What do you call a boring dinosaur?|A dino-snore.
+Why did the banana go to the doctor?|It wasn't peeling well.
+What did the sink say to the faucet?|You're driving me crazy, you drip.
+Why did the computer go to the doctor?|Because it caught a virus.
+What do you call a bee that can't make up its mind?|A maybe.
+Why was the belt arrested?|For holding up a pair of pants.
+What do you call a sleepy stone?|A rock nap.
+Why did the clock get sent to the principal's office?|For tocking too much.
+What do you call a dog magician?|A labracadabrador.
+Why do seagulls fly over the sea?|Because if they flew over the bay, they'd be bagels.
+How does the moon cut his hair?|Eclipse it.
+Why did the orange stop rolling down the hill?|It ran out of juice.
+What do you call a cow with no legs?|Ground beef.
+What's brown and sticky?|A stick.
+Why was the calendar so popular?|Because it had a lot of dates.
+What did the fisherman say to the magician?|Pick a cod, any cod.
+What do you call an alligator in a vest?|An investigator.
+Why did the cat sit on the computer?|To keep an eye on the mouse.
+What did the zero say to the eight?|Nice belt.
+Why don't skeletons fight each other?|They don't have the guts.
+How do you make a lemon drop?|Just let it fall.
+Why did the football coach go to the bank?|To get his quarterback.
+What do you call a nosy pepper?|Jalapeno business.
+Why do ducks make great detectives?|They always quack the case.
+What do you call two birds in love?|Tweet hearts.
+What did the big flower say to the little flower?|Hi, bud!
+Why did the cow cross the road?|To get to the udder side.
+What do you call a fairy that hasn't taken a bath?|Stinker Bell.
+Why did the mushroom get invited to all the parties?|Because he was a fun-gi.
+What do you call a train that sneezes?|Achoo-choo train.
+What do you call a pile of kittens?|A meowtain.
+Why are ghosts bad at lying?|Because you can see right through them.
+Why did the robot go on vacation?|It needed to recharge.
+What do you get when you cross a snowman and a vampire?|Frostbite.
+Why is the library so quiet?|Because everyone is booked.
+What did the buffalo say to his son at the bus stop?|Bison.
+Why are pencils so bad at keeping secrets?|They always lead you on.
+What do you call a snake that works for the government?|A civil serpent.
+What do you call a fast pie?|A pi-per.
+Why did the stadium get hot after the game?|All the fans left.
+What do you get from a pampered cow?|Spoiled milk.
+What kind of music do mummies listen to?|Wrap music.
+Why did the astronaut break up with his girlfriend?|He needed some space.
+What do you call a cat that loves to bowl?|An alley cat.
+How do you catch a squirrel?|Climb a tree and act like a nut.
+Why can't you trust stairs?|They're always up to something.
+What did the buttons say at the wedding?|We're so happy to be sewn together.
+What did the cheese say when it looked in the mirror?|Halloumi.
+Why are frogs so happy?|They eat whatever bugs them.
+What kind of shoes do ninjas wear?|Sneakers.
+What do you call a lady with a rabbit on her head?|Hoppy.
+What did one plate say to the other plate?|Dinner is on me.
+Why did the teddy bear say no to dessert?|Because she was already stuffed.
+What do you call a camel with three humps?|Humphrey.
+Why do bananas wear sunscreen?|Because they peel.
+What's a cat's favorite color?|Purr-ple.
+What's orange and sounds like a parrot?|A carrot.
+What do cats eat for breakfast?|Mice Krispies.
+Where do pencils go for vacation?|Pencil-vania.
+What has ears but cannot hear?|A cornfield.
+What do you call a sheep with no legs?|A cloud.
+Why was the cell phone wearing glasses?|It lost its contacts.
+Why do bakers work so hard?|Because they knead the dough.
+What did the janitor say when he jumped out of the closet?|Supplies!
+Why did the cow go to space?|To see the moooon.
+What do you call a bee that lives in America?|A USB.
+Why did the picture frame get a promotion?|It was always well-rounded.
+What do you call a cold dog?|A chili dog.
+Why did the shoe go to school?|To improve its sole.
+What's a pirate's favorite letter?|You think it's R, but it's the sea.
+How do you make a tissue dance?|Put a little boogie in it.
+`, ['setup', 'punchline']);
+
+const QUOTE_ENTRIES = `
+Never give up.
+Small steps every day add up to big results.
+You are stronger than you think.
+Progress, not perfection.
+Believe you can, and you are halfway there.
+Today is a great day to begin again.
+Every expert was once a beginner.
+Your effort today builds your tomorrow.
+Keep going. You are closer than you were yesterday.
+Courage is taking the next step even when you are afraid.
+Dream big, start small, and start now.
+Mistakes are proof that you are trying.
+Be the reason someone smiles today.
+You can do hard things.
+The best time to start was yesterday. The next best time is now.
+Fall seven times, stand up eight.
+Consistency beats intensity.
+One day or day one. You decide.
+Do something today that your future self will thank you for.
+Don't wish for it. Work for it.
+Your only limit is the one you set for yourself.
+Great things never come from comfort zones.
+Make today count.
+Start where you are. Use what you have. Do what you can.
+It always seems impossible until it is done.
+Focus on the step in front of you, not the whole staircase.
+Be patient with yourself. Growth takes time.
+You didn't come this far to only come this far.
+Turn your can'ts into cans and your dreams into plans.
+Hard work beats talent when talent doesn't work hard.
+Today's effort is tomorrow's strength.
+A little progress each day adds up.
+Keep your face to the sun and the shadows fall behind you.
+Fortune favors the brave.
+Let your curiosity be bigger than your fear.
+Your attitude determines your direction.
+Be proud of how far you have come.
+Rest if you must, but don't quit.
+Success is the sum of small efforts repeated daily.
+Don't count the days. Make the days count.
+Every sunrise is a fresh chance.
+You are capable of amazing things.
+The harder you work, the luckier you get.
+Do it with passion or not at all.
+Doubt kills more dreams than failure ever will.
+Be kind to yourself on the way to your goals.
+Chase progress, not applause.
+Stay positive, work hard, make it happen.
+Challenges are what make life interesting.
+Your future is created by what you do today.
+The journey of a thousand miles begins with a single step.
+Be brave enough to start badly.
+You grow through what you go through.
+Stars can't shine without darkness.
+You've survived every hard day so far. Keep going.
+Wake up with determination. Go to bed with satisfaction.
+Strive for progress, not perfection.
+Trust the process.
+What you do every day matters more than what you do once in a while.
+Don't stop when you're tired. Stop when you're done.
+The secret of getting ahead is getting started.
+Make it happen. Shock everyone.
+If it scares you, it might be a good thing to try.
+Think big. Act now.
+Happiness is a journey, not a destination.
+Every accomplishment starts with the decision to try.
+Your potential is endless.
+Be a voice, not an echo.
+You are one decision away from a different life.
+The only way out is through.
+Keep showing up. That is half the battle.
+Don't be afraid to start over. It's a chance to build something better.
+Greatness is a lot of small things done well.
+Make your dreams louder than your doubts.
+You are braver than you believe and smarter than you seem.
+There is always light after the storm.
+Believe in the magic of new beginnings.
+Learn from yesterday, live for today, hope for tomorrow.
+Success is walking from failure to failure with no loss of enthusiasm.
+Your best is enough.
+Let today be the day you try.
+The comeback is always stronger than the setback.
+Work hard in silence. Let success make the noise.
+Little by little, a little becomes a lot.
+You can't change the wind, but you can adjust your sails.
+Energy and persistence conquer all things.
+Done is better than perfect.
+Stay hungry. Stay humble. Stay kind.
+Set goals, take action, celebrate wins.
+Be so good they can't ignore you.
+A smooth sea never made a skilled sailor.
+Today is yours. Make it amazing.
+Take a deep breath. You've got this.
+Be fearless in the pursuit of what sets your soul on fire.
+Every day is a second chance.
+Aim high, stay humble, keep moving.
+It's never too late to be who you might have been.
+Choose to shine.
+If you can dream it, you can do it.
+Collect moments, not things.
+Your journey is unique. Own it.
+Make each day your masterpiece.
+Do what you love and love what you do.
+Hustle in silence, thrive in public.
+You are enough, just as you are.
+The best view comes after the hardest climb.
+`.trim().split('\n').filter(Boolean).map(q => ({ quote: q }));
+
+// Every day of the week has its own purpose.
+// getDay(): 0 = Sunday ... 6 = Saturday.
+const DAILY_TYPES = [
+    { key: 'quote',  title: 'Motivation Sunday',        icon: 'sparkles',       pool: () => QUOTE_ENTRIES },
+    { key: 'word',   title: 'Word Monday',              icon: 'book-open',      pool: () => WORD_ENTRIES },
+    { key: 'wyr',    title: 'Would You Rather Tuesday', icon: 'scale',          pool: () => WYR_ENTRIES },
+    { key: 'riddle', title: 'Riddle Wednesday',         icon: 'puzzle',         pool: () => RIDDLE_ENTRIES },
+    { key: 'trivia', title: 'Trivia Thursday',          icon: 'graduation-cap', pool: () => TRIVIA_ENTRIES },
+    { key: 'fact',   title: 'Fun Fact Friday',          icon: 'lightbulb',      pool: () => FACT_ENTRIES },
+    { key: 'joke',   title: 'Story/Joke Saturday',      icon: 'smile',          pool: () => JOKE_ENTRIES }
+];
+
+// The "current" date. A function (not new Date() inline) so it can be
+// overridden when checking a different weekday.
+function getDailyDate() {
+    return new Date();
+}
+
+// Local calendar day number (days since 1970-01-01), so everything changes
+// at local midnight.
 function getWordDayIndex(d) {
     return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000);
 }
 
 function getTodayDateString() {
-    const d = new Date();
+    const d = getDailyDate();
     const pad = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function getTodaysWord() {
-    return WORD_ENTRIES[getWordDayIndex(new Date()) % WORD_ENTRIES.length];
+function getDailyType(d) {
+    return DAILY_TYPES[d.getDay()];
 }
 
-function initWord() {
+// Each weekday occurs exactly once per 7-day bucket, so using the bucket
+// number as the index means that day's content never repeats until its
+// whole pool has been used.
+function getDailyEntry(type, d) {
+    const pool = type.pool();
+    return pool[Math.floor(getWordDayIndex(d) / 7) % pool.length];
+}
+
+// Deterministic shuffle of 0..n-1 so trivia answers aren't always in the
+// same slot, but are stable across reloads on the same day.
+function seededOrder(n, seed) {
+    let s = seed >>> 0;
+    const rand = () => {
+        s = (s + 0x6D2B79F5) >>> 0;
+        let t = s;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const order = Array.from({ length: n }, (_, i) => i);
+    for (let i = n - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+    }
+    return order;
+}
+
+function initDaily() {
     const today = getTodayDateString();
-    if (!state.word || state.word.date !== today) {
-        state.word = { date: today, revealed: false };
+    if (!state.daily || state.daily.date !== today) {
+        state.daily = { date: today, revealed: false, choice: null };
         saveState();
     }
-    renderWord();
+    renderDaily();
 }
 
-function renderWord() {
-    const wordEl = document.getElementById('wordReveal');
-    const revealBtn = document.getElementById('wordRevealBtn');
-    if (!wordEl || !revealBtn) return;
-
-    const revealed = !!(state.word && state.word.revealed);
-    const entry = getTodaysWord();
-    const promptEl = document.getElementById('wordPrompt');
-    if (promptEl) promptEl.textContent = `${entry.def.charAt(0).toUpperCase() + entry.def.slice(1)}. What is the word?`;
-    wordEl.textContent = revealed ? entry.word : '';
-    wordEl.hidden = !revealed;
-    revealBtn.hidden = revealed; // the button goes away once the word is shown
+// If the tab stays open past midnight, switch to the new day's content.
+function refreshDailyIfNewDay() {
+    if (!state.daily || state.daily.date !== getTodayDateString()) initDaily();
 }
 
-function revealWord() {
-    if (!state.word || state.word.revealed) return;
-    state.word.revealed = true;
+function setDailyIcon(wrapperId, name) {
+    const wrap = document.getElementById(wrapperId);
+    if (wrap) wrap.innerHTML = `<i data-lucide="${name}"></i>`;
+}
+
+function renderDaily() {
+    const d = getDailyDate();
+    const type = getDailyType(d);
+    const entry = getDailyEntry(type, d);
+    const st = state.daily || { revealed: false, choice: null };
+
+    const widget = document.getElementById('dailyWidget');
+    const titleEl = document.getElementById('dailyTitleText');
+    const promptEl = document.getElementById('dailyPrompt');
+    const choicesEl = document.getElementById('dailyChoices');
+    const revealBtn = document.getElementById('dailyRevealBtn');
+    const revealLabel = document.getElementById('dailyRevealLabel');
+    const resultEl = document.getElementById('dailyResult');
+    if (!widget || !titleEl || !promptEl || !choicesEl || !revealBtn || !resultEl) return;
+
+    widget.dataset.type = type.key;
+    titleEl.textContent = type.title;
+    setDailyIcon('dailyTitleIcon', type.icon);
+    choicesEl.innerHTML = '';
+    resultEl.className = 'daily-result';
+    resultEl.textContent = '';
+    resultEl.hidden = true;
+    revealBtn.hidden = true;
+
+    const showResult = (text, cls) => {
+        resultEl.textContent = text;
+        resultEl.className = 'daily-result' + (cls ? ' ' + cls : '');
+        resultEl.hidden = false;
+    };
+    // Reveal-style days: a button that shows the answer, then goes away.
+    const setReveal = (label, resultText, cls) => {
+        revealLabel.textContent = label;
+        if (st.revealed) showResult(resultText, cls);
+        else revealBtn.hidden = false;
+    };
+    const addChoice = (label, index, stateClass) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'daily-choice' + (stateClass ? ' ' + stateClass : '');
+        b.dataset.index = String(index);
+        b.textContent = label;
+        if (st.choice !== null) b.disabled = true;
+        choicesEl.appendChild(b);
+    };
+
+    switch (type.key) {
+        case 'word': {
+            const def = entry.def.charAt(0).toUpperCase() + entry.def.slice(1);
+            promptEl.textContent = `${def}. What is the word?`;
+            setReveal('Reveal', entry.word, 'daily-result-big');
+            break;
+        }
+        case 'wyr': {
+            promptEl.textContent = 'Would you rather...';
+            [entry.a, entry.b].forEach((opt, i) => {
+                addChoice(opt, i, st.choice === i ? 'chosen' : '');
+            });
+            if (st.choice !== null) showResult(st.choice === 0 ? entry.resultA : entry.resultB);
+            break;
+        }
+        case 'riddle': {
+            promptEl.textContent = '';
+            const list = document.createElement('ul');
+            list.className = 'daily-clues';
+            entry.clues.forEach(c => {
+                const li = document.createElement('li');
+                li.textContent = c;
+                list.appendChild(li);
+            });
+            promptEl.appendChild(list);
+            setReveal('Reveal answer', entry.answer, 'daily-result-big');
+            break;
+        }
+        case 'trivia': {
+            promptEl.textContent = entry.q;
+            const options = [entry.correct, entry.w1, entry.w2, entry.w3];
+            const order = seededOrder(options.length, getWordDayIndex(d));
+            order.forEach(idx => {
+                let cls = '';
+                if (st.choice !== null) {
+                    if (idx === 0) cls = 'correct';
+                    else if (idx === st.choice) cls = 'wrong';
+                }
+                addChoice(options[idx], idx, cls);
+            });
+            if (st.choice !== null) {
+                if (st.choice === 0) showResult('Correct! Great job.', 'daily-result-good');
+                else showResult(`Not quite. The answer is ${entry.correct}.`, 'daily-result-bad');
+            }
+            break;
+        }
+        case 'fact': {
+            promptEl.textContent = `Here is a surprising fact about ${entry.topic}. Ready to see it?`;
+            setReveal('Reveal fact', entry.fact);
+            break;
+        }
+        case 'joke': {
+            promptEl.textContent = entry.setup;
+            setReveal('Reveal punchline', entry.punchline, 'daily-result-big');
+            break;
+        }
+        case 'quote': {
+            promptEl.textContent = entry.quote;
+            promptEl.classList.add('daily-quote');
+            break;
+        }
+    }
+    if (type.key !== 'quote') promptEl.classList.remove('daily-quote');
+    lucide.createIcons();
+}
+
+function revealDaily() {
+    if (!state.daily || state.daily.revealed) return;
+    state.daily.revealed = true;
     saveState();
-    renderWord();
+    renderDaily();
+}
+
+// Tap an option on Would You Rather / Trivia days. Only the first tap counts.
+function chooseDaily(index) {
+    if (!state.daily || state.daily.choice !== null) return;
+    state.daily.choice = index;
+    saveState();
+    renderDaily();
 }
 
 // Closed by default; the chevron points down when closed, up when open.
-function toggleWordOpen() {
-    const widget = document.getElementById('wordWidget');
-    const icon = document.getElementById('wordToggleIcon');
+function toggleDailyOpen() {
+    const widget = document.getElementById('dailyWidget');
+    const icon = document.getElementById('dailyToggleIcon');
     if (!widget || !icon) return;
     const open = widget.classList.toggle('open');
     icon.innerHTML = `<i data-lucide="${open ? 'chevron-up' : 'chevron-down'}"></i>`;
     lucide.createIcons();
-    const btn = document.getElementById('wordToggle');
+    const btn = document.getElementById('dailyToggle');
     if (btn) {
-        btn.setAttribute('aria-label', open ? 'Close word of the day' : 'Open word of the day');
+        btn.setAttribute('aria-label', open ? 'Close daily feature' : 'Open daily feature');
         btn.setAttribute('aria-expanded', String(open));
     }
 }
@@ -2115,7 +2957,7 @@ function initGreeting() {
     renderGreeting();
     // Keep the time-of-day / date accurate across hour and midnight
     // boundaries for anyone who leaves the tab open.
-    setInterval(renderGreeting, 60 * 1000);
+    setInterval(() => { renderGreeting(); refreshDailyIfNewDay(); }, 60 * 1000);
 }
 
 // Activity logic

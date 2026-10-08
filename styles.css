@@ -2253,33 +2253,33 @@ body.edit-mode-active .dashboard-card:active {
 }
 
 /* ============================================================
-   WORD OF THE DAY
+   DAILY FEATURE (a different purpose every day of the week)
    ============================================================ */
 
 /* Docked in its own row directly above the tracker cards, right-aligned —
    a reserved spot in normal document flow, so no card (and nothing else)
    can ever render underneath or overlap it. */
-.word-dock {
+.daily-dock {
     display: flex;
     justify-content: flex-end;
     margin-bottom: 1.25rem;
 }
 
-.word-widget {
-    width: 280px;
+.daily-widget {
+    width: 340px;
     max-width: 100%;
     padding: 1rem 1.1rem;
     animation: slideIn 0.3s ease;
 }
 
-.word-header {
+.daily-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
 }
 
-.word-title {
+.daily-title {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -2288,13 +2288,17 @@ body.edit-mode-active .dashboard-card:active {
     color: var(--text-main);
 }
 
-.word-title svg {
+.daily-title svg {
     width: 16px;
     height: 16px;
     color: var(--primary);
 }
 
-.word-toggle {
+#dailyTitleIcon {
+    display: inline-flex;
+}
+
+.daily-toggle {
     width: 28px;
     height: 28px;
     flex-shrink: 0;
@@ -2309,13 +2313,13 @@ body.edit-mode-active .dashboard-card:active {
     transition: all var(--transition-fast);
 }
 
-.word-toggle:hover {
+.daily-toggle:hover {
     background: var(--bg-glass-hover);
     color: var(--text-main);
 }
 
 /* Body only shows while open. */
-.word-body {
+.daily-body {
     display: none;
     margin-top: 0.85rem;
     flex-direction: column;
@@ -2323,33 +2327,122 @@ body.edit-mode-active .dashboard-card:active {
     gap: 0.75rem;
 }
 
-.word-widget.open .word-body {
+.daily-widget.open .daily-body {
     display: flex;
 }
 
-.word-question {
+.daily-prompt {
     font-size: 0.9rem;
+    line-height: 1.5;
     color: var(--text-main);
 }
 
-/* The [hidden] attribute must beat any display rule set on these. */
-.word-body [hidden] {
-    display: none !important;
-}
-
-.word-reveal {
-    font-size: 1.6rem;
-    font-weight: 800;
-    letter-spacing: 0.5px;
-    text-transform: capitalize;
+.daily-prompt.daily-quote {
+    font-size: 1.15rem;
+    font-weight: 700;
+    line-height: 1.4;
     background: var(--primary-gradient);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
+/* Riddle clues */
+.daily-clues {
+    margin: 0;
+    padding-left: 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+/* Would You Rather / Trivia options */
+.daily-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.daily-choices:empty {
+    display: none;
+}
+
+.daily-choice {
+    width: 100%;
+    text-align: left;
+    font-family: var(--font-primary);
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.65rem 0.85rem;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    color: var(--text-main);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.daily-choice:hover:not(:disabled) {
+    background: var(--bg-glass-hover);
+    border-color: var(--primary);
+}
+
+.daily-choice:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+.daily-choice.chosen {
+    opacity: 1;
+    border-color: var(--primary);
+    background: var(--primary-glow);
+}
+
+.daily-choice.correct {
+    opacity: 1;
+    border-color: var(--success);
+    background: rgba(16, 185, 129, 0.18);
+}
+
+.daily-choice.wrong {
+    opacity: 1;
+    border-color: var(--accent);
+    background: rgba(244, 63, 94, 0.15);
+}
+
+.daily-result {
+    font-size: 0.9rem;
+    line-height: 1.5;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.daily-result.daily-result-big {
+    font-size: 1.4rem;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    background: var(--primary-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.daily-result.daily-result-good {
+    color: var(--success);
+}
+
+.daily-result.daily-result-bad {
+    color: var(--accent);
+}
+
+/* The [hidden] attribute must beat any display rule set on these. */
+.daily-body [hidden] {
+    display: none !important;
+}
+
 @media (max-width: 768px) {
-    .word-widget {
+    .daily-widget {
         width: 100%;
     }
 }
